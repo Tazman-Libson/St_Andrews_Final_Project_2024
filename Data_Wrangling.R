@@ -34,7 +34,8 @@ met <- price_to_returns(Meta)
 example_returns <- apl %>%
   left_join(mic, join_by(Date)) %>%
   left_join(tel, join_by(Date)) %>%
-  left_join(met, join_by(Date))
+  left_join(met, join_by(Date)) %>%
+  rename(Apple = Returns.x, Microsoft = Returns.y, Intel = Returns.x.x, Meta = Returns.y.y )
 
 
 

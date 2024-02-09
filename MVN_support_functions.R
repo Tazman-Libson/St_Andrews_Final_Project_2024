@@ -7,7 +7,8 @@ library(matlib)
 #MEANS <- matrix (m x n) of means for the mvt
 #VCV <- 3D(n x n x m) array of variance/covariance matrices
 #TPM <- transition probability matrix (m x m)
-#ID <- initial distribution vector (m), if = 0, assume stationary
+#ID <- initial distribution vector (m)
+#Stationary <- Boolean, if true, the ID will be taken as the initial distribution
 
 #Need to make a function that takes the VCV array and turns it into the relevant parameters:
 #ar is a VCV as described above
@@ -19,7 +20,6 @@ mvn.ar_to_vec <- function(ar){
   }
   m <- dim(ar)[3] #number of states
   t <- sapply(1:m, symmat_to_vec)
-  print(t)
   as.vector(t)
 }
 
@@ -34,27 +34,23 @@ mvn.vec_to_ar <- function(vector, n, m){
   dat <- array(data = dat, dim = c(n,n,m))
   return(dat)
 }
-mvn.vec_to_ar(tvec, 3, 2)
-tvec <- mvn.ar_to_vec(tmod$VCV)
-tmod$VCV
-symMat( tmod$TPM[lower.tri(tmod$TPM, diag = TRUE)])
+
 
 #In Order to use nlm, need a function that doesn't have restrictions on it's parameters
 #The means aren't restricted
 #Variance and covariance matrix is non-negative and symmetric. 
 #TPM row values must sum to 1 and are also non-negative. Means that tpm has only m(m-1) parameters to estimate
-#Take l
-mvn.n2w <- function(mod){
+
+mvn.n2w <- function(mod, stationary){
   #Reparameterization for tpm:
   tpm <- mod$TPM
   m <- dim(tpm)[1]
+  stationary <- mod$Stationary
   tpm <- log(tpm/diag(tpm))
   tpm <- as.vector(tpm[!diag(m)])
   #Initial Distribution:
-  id <- mod$ID
-  if(length(id) < 2){
-    id <- NA
-  }else{
+  if(!stationary){
+    id <- mod$ID
     id<-log(id[-1]/id[1])
   }
   #var/covariances:
@@ -64,7 +60,10 @@ mvn.n2w <- function(mod){
   vcv <- log(vcv) #take log
   #means (don't need reparam, just vectorisation)
   mns <- as.vector(mod$MEANS)
-  params <- c(m, n, tpm, vcv, mns, id)
+  params <- c(tpm, vcv, mns)
+  if(!stationary){
+    params <- c(params, id)
+  }
   return(params)
 }
 #function for fining stationary distribution from a given tpm
@@ -74,14 +73,12 @@ stat_dist <- function(tpm){
   return(delta)
 }
 
-mvn.w2n <- function(params){
-  m <- params[1]
-  n <- params[2]
+mvn.w2n <- function(params, m, n, stationary){
   #index 3 is start of tpm, which goes for 3 + m*(m-1)
-  tpm_last <- (m*(m-1))+2
+  tpm_last <- (m*(m-1))
   vcv_last <- tpm_last + m*n*n - m*n*(n-1)/2
   mns_last <- vcv_last + m*n
-  tpm <- params[3:tpm_last]
+  tpm <- params[1:tpm_last]
   TPM <- diag(m)
   TPM[!TPM] <- exp(tpm)
   TPM <- TPM/apply(TPM,1,sum)
@@ -90,7 +87,7 @@ mvn.w2n <- function(params){
   VCV <- mvn.vec_to_ar(vcv, n, m)
   means <- params[(vcv_last+1):mns_last]
   MEANS <- matrix(means, nrow = m, ncol = n, byrow = T)
-  if(is.na(tail(params, n = 1))){
+  if(stationary){
     ID <- stat_dist(TPM)
   }else{
     id <- tail(params, n = (m-1))
@@ -106,17 +103,20 @@ mvn.w2n <- function(params){
     )
   )
 }
+
 stat_dist(stan_starting_tpm(c(.9,.8)))
 #testmod
 tmod<- list( 
   TPM =stan_starting_tpm(c(.9,.8)),
   MEANS = matrix(c(3,4,5,6,7,8), nrow = 2, ncol =3, byrow = T),
   ID = NA,
-  VCV = array(1:18, dim = c(3,3,2))
+  VCV = array(1:18, dim = c(3,3,2)),
+  Stationary = TRUE
 )
 tmod
 tparams <-mvn.n2w(tmod)
-mvn.w2n(tparams)
+tmod2 <- mvn.w2n(tparams, 2, 3, T)
+tmod2$TPM
 
 tmod
 #Function for state_dependent distribution probability matrix
@@ -136,12 +136,19 @@ mvn.p_matrix <- function(mod, X){
   return(diag(probs))
 }
 
-?dmvnorm
+#Function to easily create TPM matrices
+stan_starting_tpm <- function(probs){
+  m <- length(probs)
+  probs_diag <- diag(probs)
+  remain <- (rep(1,m) - probs)/(m-1)
+  out <- (probs_diag - diag(remain) ) + remain
+  return(out)
+}
+
 
 arrrrr <- array(rep(as.vector(diag(3)),2), dim = c(3,3,2))
 tx <- c(4,5,6)
-tmod$VCV <- c(as.vector(diag))
-mvn.p_matrix(mvn.w2n(tparams),tx)
+mvn.p_matrix(mvn.w2n(tparams, 2, 3, T),tx)
 pmtestmod <- list(
   TPM = stan_starting_tpm(c(.9,.9)),
   ID = NA,
