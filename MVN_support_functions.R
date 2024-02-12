@@ -16,12 +16,13 @@ mvn.ar_to_vec <- function(ar){
   #Sub function in order to use sapply will take the square matrix in each index of VCV and
   #return a vector of the upper triangular elements
   symmat_to_vec <- function(s){
-    return(ar[,,s][upper.tri(ar[,,s], diag = TRUE)])
+    return(ar[,,s][upper.tri(ar[,,s], diag = F)])
   }
   m <- dim(ar)[3] #number of states
   t <- sapply(1:m, symmat_to_vec)
   as.vector(t)
 }
+
 
 #Function to turn vector into array:
 mvn.vec_to_ar <- function(vector, n, m){
@@ -33,6 +34,14 @@ mvn.vec_to_ar <- function(vector, n, m){
   dat <- as.vector(dat)
   dat <- array(data = dat, dim = c(n,n,m))
   return(dat)
+}
+
+mvn.ar_to_vec(mod2$VCV)
+
+
+#For VCV need 
+vcv.n2w <- function(vec, n, m){
+  
 }
 
 
