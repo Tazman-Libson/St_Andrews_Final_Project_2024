@@ -51,14 +51,32 @@ qqnorm(y = as.vector(ahhh))
 max(tmatrix)
 
 
-
-
+forw[1,]
+nlm_mod$ID %*% nlm_mod$TPM %*% mvn.
 #Function that gives the conditional probability of observing each observation given the rest of the observations
 
 mvn.conditional_v2 <- function(x, mod){
-  la <- mvn.lforward(x, mod)
-  lb <- mvn.lbackward(x, mod)
-  cond_prod_single <- function(pos){
-      
+  m <- dim(mod$TPM)[1]
+  lenx <- dim(x)[1]
+  a <- exp(mvn.lforward(x, mod))
+  b <- exp(mvn.lbackward(x, mod))
+  cond_prob_single <- function(pos){
+    if(pos == 1){
+      num <- sum(mod$ID %*% mvn.p_matrix(mod, x[1,]) %*% b[1,])
+      denom <- sum(mod$ID %*% b[1,])
+      return(num/denom)
+    }
+    num <- sum(a[pos - 1,] %*% mod$TPM %*% mvn.p_matrix(mod, x[pos,]) %*% b[pos,])
+    denom <- sum(a[pos-1,]%*%mod$TPM %*%b[pos,])
+    return(num/denom)
   }
+  
+  condprobs <- matrix(sapply(1:lenx, FUN = cond_prob_single), nrow = lenx)
+  return(condprobs)
 }
+
+pseudoresids <- qnorm(mvn.conditional_v2(tmatrix, nlm_mod))
+#Doesn't deviate teribly from normal, but definetely not standard normal distributed.
+qqnorm(pseudoresids)
+hist(pseudoresids)
+hist(mvn.conditional_v2(tmatrix, nlm_mod))
