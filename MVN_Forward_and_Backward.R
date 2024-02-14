@@ -3,7 +3,7 @@
 
 # log forward probabilities 
 #framework from Hidden Markov Models for Time Series: An Introduction Using R
-mvn.lforward<-function(mod, x){
+mvn.lforward<-function(x, mod){
   m <- dim(mod$TPM)[1]
   lenx <- dim(x)[1] #number of observations
   lalpha        <- matrix(NA,ncol = m, nrow = lenx)
@@ -28,8 +28,8 @@ Lt <- mvn.lforward(mod = nlm_mod, x = tmatrix)[100,]
 log(exp(Lt)%*%c(1,1,1)) 
 #It is, we're good
 
-
-
+forw <-mvn.lforward(mod = nlm_mod, x = tmatrix)
+back <- mvn.lbackward(tmatrix, nlm_mod)
 
 #Computing log backward probabilities
 mvn.lbackward<-function(x,mod)

@@ -135,7 +135,7 @@ tmod
 #Outputs:
 #an m x m diagnonal matrix with the marginal probability for each state-dependent distribtion
 mvn.p_matrix <- function(mod, X){
-  mvn <- function(state){
+  mvn <- function(m){
     sig <- mod$VCV[,,m]
     means <- mod$MEANS[m,]
     return(dmvnorm(X, mean = means, sigma = sig))

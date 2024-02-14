@@ -101,3 +101,5 @@ optim_mod
 optimtest$convergence
 
 
+nlm_mod
+mvnlktest$minimum
