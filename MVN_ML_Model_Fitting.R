@@ -24,10 +24,9 @@ mvn.HMM_mllk <- function(parvec, X, m, n, stationary){
   return(-l)
 }
 
-mvn.HMM_ml_mod_fit <- function(mod, data){
+mvn.HMM_ml_mod_fit <- function(mod, data, stationary = T){
   n <- dim(mod$VCV)[2] # number of variables for multivariate norm
   m <- dim(mod$TPM)[1] # number of states
-  stationary <- mod$Stationary
   parvec <- mvn.n2w(mod)
   print(parvec)
   print( mvn.w2n(parvec, m, n, stationary))
@@ -59,7 +58,7 @@ returns_tmod <- list(
 )
 
 tmatrix <- ret_matrix[1:100,] #Smaller Matrix for small testing
-returns_tmod[1]
+
 mvn.HMM_ml_mod_fit(returns_tmod, tmatrix)
 tvec <- mvn.n2w(returns_tmod, T)
 tvecmod <- mvn.w2n(tvec, 3, 4, T)
@@ -72,34 +71,11 @@ nlm_mod <- mvn.w2n(mvnlktest$estimate, m = 3, n = 4, stationary = T)
 #Most Means didn't change
 #VCV didn't change at all except for the third 4x4 matrix, where every value changed
 #Need to investigate using nlm for estimating so many parameters, could potentially be
-#causing some problems. 
+#causing some problems.  
 #Changing grad tolerance didn't really help
 
-
-c(0.5454545, 0.2727273, 0.1818182) %*% tvecmod$TPM
-tvecmod$TPM
-returns_tmod$TPM
-?nlm
-
-str(tvecmod[[4]])
-optimtest <- optim(tvec, fn = mvn.HMM_mllk, m = 3, n = 4, stationary = T, X = tmatrix, control = list(maxit = 2000))
-optim_mod <- mvn.w2n(optimtest$par, m = 3, n = 4, stationary = T)
-
-mvn.mllk_from_mod <- function(mod, stationary, X){
-  print(stationary)
-  m <- dim(mod$TPM)[1]
-  n <- dim(mod$VCV)[2]
-  parvec <- mvn.n2w(mod, stationary = stationary)
-  return(mvn.HMM_mllk(parvec, X = x, m = m, n = n, stationary = stationary))
-}
-optimtest$counts
-mvnlktest$minimum
 nlm_mod
-mvn.mllk_from_mod(optim_mod, stationary = T, tmatrix)
-
-optim_mod
-optimtest$convergence
 
 
-nlm_mod
 mvnlktest$minimum
+

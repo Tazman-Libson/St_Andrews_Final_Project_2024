@@ -16,7 +16,7 @@ mvn.ar_to_vec <- function(ar){
   #Sub function in order to use sapply will take the square matrix in each index of VCV and
   #return a vector of the upper triangular elements
   symmat_to_vec <- function(s){
-    return(ar[,,s][upper.tri(ar[,,s], diag = F)])
+    return(ar[,,s][upper.tri(ar[,,s], diag = T)])
   }
   m <- dim(ar)[3] #number of states
   t <- sapply(1:m, symmat_to_vec)
@@ -36,13 +36,10 @@ mvn.vec_to_ar <- function(vector, n, m){
   return(dat)
 }
 
-mvn.ar_to_vec(mod2$VCV)
 
 
-#For VCV need 
-vcv.n2w <- function(vec, n, m){
-  
-}
+
+
 
 
 #In Order to use nlm, need a function that doesn't have restrictions on it's parameters
@@ -113,7 +110,7 @@ mvn.w2n <- function(params, m, n, stationary){
   )
 }
 
-stat_dist(stan_starting_tpm(c(.9,.8)))
+
 #testmod
 tmod<- list( 
   TPM =stan_starting_tpm(c(.9,.8)),

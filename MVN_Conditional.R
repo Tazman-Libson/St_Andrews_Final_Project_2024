@@ -76,7 +76,7 @@ mvn.conditional_v2 <- function(x, mod){
 }
 
 pseudoresids <- qnorm(mvn.conditional_v2(tmatrix, nlm_mod))
-#Doesn't deviate teribly from normal, but definetely not standard normal distributed.
+#Doesn't deviate terribly from normal, but definitely not standard normal distributed.
 qqnorm(pseudoresids)
 hist(pseudoresids)
 hist(mvn.conditional_v2(tmatrix, nlm_mod))
