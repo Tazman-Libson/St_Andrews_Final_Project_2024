@@ -27,10 +27,10 @@ mvn.HMM_mllk <- function(parvec, X, m, n, stationary){
 mvn.HMM_ml_mod_fit <- function(mod, data, stationary = T){
   n <- dim(mod$VCV)[2] # number of variables for multivariate norm
   m <- dim(mod$TPM)[1] # number of states
-  parvec <- mvn.n2w(mod)
+  parvec <- mvn.n2w(mod, stationary)
   print(parvec)
   print( mvn.w2n(parvec, m, n, stationary))
-  fit <- nlm(mvn.HMM_mllk, parvec, X = data, n= n, m= m, stationary = stationary)
+  fit <- nlm(mvn.HMM_mllk, parvec, X = data, n= n, m= m, stationary = stationary, steptol = 1e-5)
   print(fit)
   return(mvn.w2n(fit$estimate, m = m, n = n, stationary = stationary))
 }
@@ -59,23 +59,6 @@ returns_tmod <- list(
 
 tmatrix <- ret_matrix[1:100,] #Smaller Matrix for small testing
 
-mvn.HMM_ml_mod_fit(returns_tmod, tmatrix)
-tvec <- mvn.n2w(returns_tmod, T)
-tvecmod <- mvn.w2n(tvec, 3, 4, T)
-mvn.HMM_mllk(tvec, ret_matrix, 3, 4, T)
-
-mvnlktest <- nlm(mvn.HMM_mllk, tvec, m = 3, n = 4, stationary = T, X = tmatrix, gradtol = 1e-10)
-nlm_mod <- mvn.w2n(mvnlktest$estimate, m = 3, n = 4, stationary = T)
-#Problems:
-#TPM didn't change at all
-#Most Means didn't change
-#VCV didn't change at all except for the third 4x4 matrix, where every value changed
-#Need to investigate using nlm for estimating so many parameters, could potentially be
-#causing some problems.  
-#Changing grad tolerance didn't really help
-
-nlm_mod
-
-
-mvnlktest$minimum
+mvnlktest <- mvn.HMM_ml_mod_fit(returns_tmod, tmatrix)
+nlm_mod <- mvnlktest
 

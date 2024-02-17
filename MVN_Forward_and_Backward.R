@@ -28,9 +28,6 @@ Lt <- mvn.lforward(mod = nlm_mod, x = tmatrix)[100,]
 log(exp(Lt)%*%c(1,1,1)) 
 #It is, we're good
 
-forw <-mvn.lforward(mod = nlm_mod, x = tmatrix)
-back <- mvn.lbackward(tmatrix, nlm_mod)
-
 #Computing log backward probabilities
 mvn.lbackward<-function(x,mod)
 {
@@ -52,4 +49,4 @@ mvn.lbackward<-function(x,mod)
 }
 #Testing Backward Probabilities: 
 log(exp(log(exp(mvn.lbackward(tmatrix, nlm_mod))*exp(mvn.lforward(mod = nlm_mod, x = tmatrix))))%*%c(1,1,1)) 
-mvnlktest$minimum #all values are the same minimum
+

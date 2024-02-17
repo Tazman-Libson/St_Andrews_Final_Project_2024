@@ -31,3 +31,52 @@ testmod2 <- mvn.HMM_ml_mod_fit(mod2, tmatrix)
 qqnorm(qnorm(mvn.conditional_v2(tmatrix, testmod2)))
 testmod2
 
+
+#Testing if Pseudoresiduals make sense:
+
+nlm_gen_sample <- mvn.generate_sample(200, nlm_mod)
+
+#Fit Model to Generated Data:
+
+gen_mod <- mvn.HMM_ml_mod_fit(returns_tmod, nlm_gen_sample, T)
+gen_mod
+hist(mvn.conditional_v2(nlm_gen_sample, gen_mod))
+qqnorm(qnorm(mvn.conditional_v2(nlm_gen_sample, gen_mod)))
+mvn.conditional_v2(nlm_gen_sample, gen_mod)
+qqline(qnorm(mvn.conditional_v2(nlm_gen_sample, gen_mod)))
+gen_mod$VCV[,,3]
+
+nlm_mod$VCV[,,3]
+?qqnorm
+nlm_gen_sample[2,]
+str(nlm_gen_sample)
+str(tmatrix)
+mvn.cumul_matrix(gen_mod, nlm_gen_sample[1,])
+
+
+#Testing Time to run model fitting based on amount of data:
+times <- matrix(NA, nrow = 20, ncol = 1)
+for(i in 1:20){
+  print("n =")
+  print(10*i + 100)
+  time_mat <- ret_matrix[1:(10*i+100),]
+  time <- system.time(mvn.HMM_ml_mod_fit(returns_tmod, time_mat, T))
+  print(time)
+  times[i] <- time
+}
+profvis(mvn.HMM_ml_mod_fit(returns_tmod, tmatrix, T))
+
+
+
+#fHMM
+controls <- set_controls(
+  states = 3, 
+  sdds        = "t",
+  file        = dax,
+  date_column = "Date",
+  data_column = "Close",
+  logreturns  = TRUE,
+  from        = "2000-01-01",
+  to          = "2022-12-31"
+)
+

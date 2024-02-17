@@ -51,11 +51,10 @@ mvn.n2w <- function(mod, stationary){
   #Reparameterization for tpm:
   tpm <- mod$TPM
   m <- dim(tpm)[1]
-  stationary <- mod$Stationary
   tpm <- log(tpm/diag(tpm))
   tpm <- as.vector(tpm[!diag(m)])
   #Initial Distribution:
-  if(!stationary){
+  if(stationary == F){
     id <- mod$ID
     id<-log(id[-1]/id[1])
   }
@@ -111,20 +110,8 @@ mvn.w2n <- function(params, m, n, stationary){
 }
 
 
-#testmod
-tmod<- list( 
-  TPM =stan_starting_tpm(c(.9,.8)),
-  MEANS = matrix(c(3,4,5,6,7,8), nrow = 2, ncol =3, byrow = T),
-  ID = NA,
-  VCV = array(1:18, dim = c(3,3,2)),
-  Stationary = TRUE
-)
-tmod
-tparams <-mvn.n2w(tmod)
-tmod2 <- mvn.w2n(tparams, 2, 3, T)
-tmod2$TPM
 
-tmod
+
 #Function for state_dependent distribution probability matrix
 #Inputs:
 #mod <- list as described above
@@ -135,10 +122,10 @@ mvn.p_matrix <- function(mod, X){
   mvn <- function(m){
     sig <- mod$VCV[,,m]
     means <- mod$MEANS[m,]
-    return(dmvnorm(X, mean = means, sigma = sig))
+    return(dmvnorm(X, mean = means, sigma = sig, checkSymmetry = F))
   }
   m <- dim(mod$TPM)[1]
-  probs <- sapply(1:m, mvn)
+  probs <- lapply(1:m, mvn)
   return(diag(probs))
 }
 
@@ -163,3 +150,4 @@ pmtestmod <- list(
 )
 
 mvn.p_matrix(pmtestmod, c(0,0,0))
+
