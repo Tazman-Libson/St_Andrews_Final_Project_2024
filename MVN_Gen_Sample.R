@@ -54,4 +54,8 @@ mvn.generate_sample <- function(nobs, mod, seed = 138140){
 }
 
 
+nlm_gen_sample <- mvn.generate_sample(200, nlm_mod)
 
+#Fit Model to Generated Data:
+
+gen_mod <- mvn.HMM_ml_mod_fit(returns_tmod, nlm_gen_sample, T)

@@ -10,6 +10,17 @@ library(matlib)
 #ID <- initial distribution vector (m)
 #Stationary <- Boolean, if true, the ID will be taken as the initial distribution
 
+
+#Function to easily create TPM matrices
+stan_starting_tpm <- function(probs){
+  m <- length(probs)
+  probs_diag <- diag(probs)
+  remain <- (rep(1,m) - probs)/(m-1)
+  out <- (probs_diag - diag(remain) ) + remain
+  return(out)
+}
+
+
 #Need to make a function that takes the VCV array and turns it into the relevant parameters:
 #ar is a VCV as described above
 mvn.ar_to_vec <- function(ar){
@@ -129,25 +140,5 @@ mvn.p_matrix <- function(mod, X){
   return(diag(probs))
 }
 
-#Function to easily create TPM matrices
-stan_starting_tpm <- function(probs){
-  m <- length(probs)
-  probs_diag <- diag(probs)
-  remain <- (rep(1,m) - probs)/(m-1)
-  out <- (probs_diag - diag(remain) ) + remain
-  return(out)
-}
 
-
-arrrrr <- array(rep(as.vector(diag(3)),2), dim = c(3,3,2))
-tx <- c(4,5,6)
-mvn.p_matrix(mvn.w2n(tparams, 2, 3, T),tx)
-pmtestmod <- list(
-  TPM = stan_starting_tpm(c(.9,.9)),
-  ID = NA,
-  MEANS = matrix(c(0,0,0,1,2,3),nrow = 2, ncol = 3),
-  VCV = arrrrr
-)
-
-mvn.p_matrix(pmtestmod, c(0,0,0))
 

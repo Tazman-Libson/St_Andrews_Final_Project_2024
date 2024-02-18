@@ -6,10 +6,10 @@ library(readr)
 #Data downloaded on Feb 1st 2024 from https://www.nasdaq.com/market-activity/stocks/
 
 
-Apple <- read_csv("GitHub/St_Andrews_Final_Project_2024/Apple.csv")
-Microsoft <- read_csv("GitHub/St_Andrews_Final_Project_2024/Microsoft.csv")
-Intel <- read_csv("GitHub/St_Andrews_Final_Project_2024/Intel.csv")
-Meta <- read_csv("GitHub/St_Andrews_Final_Project_2024/META.csv")
+Apple <- read_csv("Apple.csv")
+Microsoft <- read_csv("Microsoft.csv")
+Intel <- read_csv("Intel.csv")
+Meta <- read_csv("META.csv")
 
 price_to_returns<- function(Stock){
   Stock$last <- as.numeric(sub('.', '', Stock$`Close/Last`))

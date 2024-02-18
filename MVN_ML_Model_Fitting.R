@@ -4,17 +4,10 @@
 mvn.HMM_mllk <- function(parvec, X, m, n, stationary){
   mod <- mvn.w2n(parvec, m, n, stationary)
   #print(mod)
-  tpm <- mod[[3]]
-  #str(tpm)
-  #print(tpm)
+  tpm <- mod$TPM
   t <- dim(X)[1] # number of observations
-  #Calculating product of coefficients in order to prevent underflow
-  phi <- mod[[4]]
-  #str(phi)
-  #print(phi)
-  #print(phi %*% tpm)
+  phi <- mod$ID
   l <- 0 #log likelihood
-  #Calculation is done recursively so have to be done with a for loop
   for(i in 1:t){
     v <- phi %*% tpm %*% mvn.p_matrix(mod, X[i,])
     u <- sum(v)
@@ -23,6 +16,9 @@ mvn.HMM_mllk <- function(parvec, X, m, n, stationary){
   }
   return(-l)
 }
+
+
+
 
 mvn.HMM_ml_mod_fit <- function(mod, data, stationary = T){
   n <- dim(mod$VCV)[2] # number of variables for multivariate norm

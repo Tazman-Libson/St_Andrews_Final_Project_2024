@@ -1,3 +1,27 @@
+
+#Random code:
+mvn.conditional_v2 <- function(x, mod){
+  m <- dim(mod$TPM)[1]
+  lenx <- dim(x)[1]
+  a <- exp(mvn.lforward(x, mod))
+  b <- exp(mvn.lbackward(x, mod))
+  cond_prob_single <- function(pos){
+    if(pos == 1){
+      num <- sum(mod$ID %*% mvn.cumul_matrix(mod, x[1,]) %*% b[1,])
+      denom <- sum(mod$ID %*% b[1,])
+      print(c(num, denom))
+      return(num/denom)
+    }
+    num <- sum(a[pos - 1,] %*% mod$TPM %*% mvn.cumul_matrix(mod, x[pos,]) %*% b[pos,])
+    denom <- sum(a[pos-1,]%*%mod$TPM %*%b[pos,])
+    print(c(num, denom))
+    return(num/denom)
+  }
+  print(sapply(1:10, FUN = cond_prob_single))
+  condprobs <- matrix(sapply(1:lenx, FUN = cond_prob_single), nrow = lenx)
+  return(condprobs)
+}
+
 #Trying Different Starting Conditions to see if it helps
 
 #fitting 2 state model
@@ -40,12 +64,12 @@ nlm_gen_sample <- mvn.generate_sample(200, nlm_mod)
 
 gen_mod <- mvn.HMM_ml_mod_fit(returns_tmod, nlm_gen_sample, T)
 gen_mod
-hist(mvn.conditional_v2(nlm_gen_sample, gen_mod))
-qqnorm(qnorm(mvn.conditional_v2(nlm_gen_sample, gen_mod)))
+hist(qnorm(mvn.cdf(nlm_gen_sample, gen_mod)))
+qqnorm(qnorm(mvn.cdf(nlm_gen_sample, gen_mod)))
 mvn.conditional_v2(nlm_gen_sample, gen_mod)
 qqline(qnorm(mvn.conditional_v2(nlm_gen_sample, gen_mod)))
 gen_mod$VCV[,,3]
-
+var(qnorm(mvn.cdf(nlm_gen_sample, gen_mod)))
 nlm_mod$VCV[,,3]
 ?qqnorm
 nlm_gen_sample[2,]
@@ -67,16 +91,12 @@ for(i in 1:20){
 profvis(mvn.HMM_ml_mod_fit(returns_tmod, tmatrix, T))
 
 
-
-#fHMM
-controls <- set_controls(
-  states = 3, 
-  sdds        = "t",
-  file        = dax,
-  date_column = "Date",
-  data_column = "Close",
-  logreturns  = TRUE,
-  from        = "2000-01-01",
-  to          = "2022-12-31"
+#Make an arbitrary model, Generate Data, Then run pseudoresidual functions
+arb_mod <- list(
+  MEANS <- 
 )
+
+
+arb_gen_data <-
+
 

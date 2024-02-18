@@ -12,7 +12,7 @@ mvn.lforward<-function(x, mod){
   lscale        <- log(sumfoo)
   foo           <- foo/sumfoo
   lalpha[1,]    <- lscale+log(foo)
-  for (i in 2:lenx)
+  for (i in 2:(lenx))
   {
     foo          <- foo%*%mod$TPM %*% mvn.p_matrix(mod, X = x[i,])
     sumfoo       <- sum(foo)
@@ -23,11 +23,10 @@ mvn.lforward<-function(x, mod){
   return(lalpha)
 }
 
-Lt <- mvn.lforward(mod = nlm_mod, x = tmatrix)[100,]
+Lt <- mvn.lforward(mod = nlm_mod, x = tmatrix)
 #Checking if aT *1 is equal to the likelihood
 log(exp(Lt)%*%c(1,1,1)) 
 #It is, we're good
-
 #Computing log backward probabilities
 mvn.lbackward<-function(x,mod)
 {
