@@ -1,41 +1,12 @@
-Goals:
->Research:
-  - Look into specifically how HMMs are used in Finance
-    - Modelling Returns
-  - Model Selecion Criterion
-    - Information Criterion
-    - Pseudoresiduals
-    - Testing forecasting capabilities
->Coding:
-  - Input Standardization
-    - Input Validation Function
-  - Model fitting with MSM
-  - Testing
-    - Need some example datasets/models to work with
-
-
-
-Week 3:
--Financial Modelling chapter in HMM book
--Continuous-valued state processes
--Generally more research into financial HMMs
-
-Week 5:
--Identify and code model comparison functions
--Have Pseudoresidual function coded
-  -both pseudoresiduals themselves and graphical display of pseudoresiduals
-  
-Week 6:
-- BlockCV testing. 
-- Writing too please
-
 
 Revision Week:
--Test Cases and Graphing/Visualization
+-Fix Correlation Matirx Estimation
+-Pseudoresiduals for individual stock prices rather than an entire observation
+-
 
 Week 8
 -1st draft of Report proper
--R Package Assembly
+
 Week 10:
 -Finish Up
 
