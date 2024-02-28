@@ -3,13 +3,17 @@
 #of each variable at the same time (t x n), t = # of times observed, n = # of variables for multivariate norm
 mvn.HMM_mllk <- function(parvec, X, m, n, stationary){
   mod <- mvn.w2n(parvec, m, n, stationary)
-  #print(mod)
+  if(!stationary){
+    mod$ID <- sapply(mod$ID, FUN = threshold)
+  }
+  print(mod)
   tpm <- mod$TPM
   t <- dim(X)[1] # number of observations
-  phi <- mod$ID
-  l <- 0 #log likelihood
-  for(i in 1:t){
-    v <- phi %*% tpm %*% mvn.p_matrix(mod, X[i,])
+  phi <- mod$ID * diag(mvn.p_matrix(mod, X[1,]))
+  l <- log(sum(phi)) #log likelihood
+  phi <- phi/sum(phi)
+  for(i in 2:t){
+    v <- phi %*% tpm * diag(mvn.p_matrix(mod, X[i,]))
     u <- sum(v)
     l <- l + log(u)
     phi <- v/u #rescaled vector of forward probabilities
@@ -19,16 +23,19 @@ mvn.HMM_mllk <- function(parvec, X, m, n, stationary){
 
 
 
-
 mvn.HMM_ml_mod_fit <- function(mod, data, stationary = T){
   n <- dim(mod$VCV)[2] # number of variables for multivariate norm
   m <- dim(mod$TPM)[1] # number of states
   parvec <- mvn.n2w(mod, stationary)
-  print(parvec)
-  print( mvn.w2n(parvec, m, n, stationary))
+  #print(parvec)
+  #print( mvn.w2n(parvec, m, n, stationary))
   fit <- nlm(mvn.HMM_mllk, parvec, X = data, n= n, m= m, stationary = stationary, steptol = 1e-5)
-  print(fit)
-  return(mvn.w2n(fit$estimate, m = m, n = n, stationary = stationary))
+  #print(fit)
+  mod <- mvn.w2n(fit$estimate, m = m, n = n, stationary = stationary)
+  mod$minimum <- fit$minimum
+  mod$code <- fit$code
+  mod$iterations <- fit$iterations
+  return(mod)
 }
 
 #Testing:
@@ -57,4 +64,4 @@ tmatrix <- ret_matrix[1:100,] #Smaller Matrix for small testing
 
 mvnlktest <- mvn.HMM_ml_mod_fit(returns_tmod, tmatrix)
 nlm_mod <- mvnlktest
-
+#Correlation MATRIX let it be negative

@@ -48,8 +48,13 @@ mvn.vec_to_ar <- function(vector, n, m){
 }
 
 
-
-
+threshold <- function(val){
+  if(abs(val) < 1.0e-16){
+    return(0)
+  }else{
+    return(val)
+  }
+}
 
 
 
@@ -82,6 +87,17 @@ mvn.n2w <- function(mod, stationary){
   }
   return(params)
 }
+
+ID <- c(5.977435e-309,  1.000000e+00)
+ID <- log(ID[-1]/ID[1])
+ID <- sapply(ID, threshold)
+foo<-c(1,exp(ID))
+ID<-foo/sum(foo)
+
+
+
+
+sapply(ID, threshold)
 #function for fining stationary distribution from a given tpm
 stat_dist <- function(tpm){
   m <- dim(tpm)[1]
@@ -102,7 +118,7 @@ mvn.w2n <- function(params, m, n, stationary){
   vcv <- exp(vcv)
   VCV <- mvn.vec_to_ar(vcv, n, m)
   means <- params[(vcv_last+1):mns_last]
-  MEANS <- matrix(means, nrow = m, ncol = n, byrow = T)
+  MEANS <- matrix(means, nrow = m, ncol = n, byrow = F)
   if(stationary){
     ID <- stat_dist(TPM)
   }else{
