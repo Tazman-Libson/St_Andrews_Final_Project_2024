@@ -116,7 +116,7 @@ mvn.w2n <- function(params, m, n, stationary){
   TPM <- TPM/apply(TPM,1,sum)
   #Correlation Array:
   corr <- params[(tpm_last+1):corr_last]
-  corr <- tan(corr)*2/pi
+  corr <- atan(corr)*2/pi
   CORR <- mvn.vec_to_ar(corr, n, m)
   #Variance Matrix:
   vars <- params[(corr_last + 1):vars_last]
@@ -146,6 +146,7 @@ mvn.w2n <- function(params, m, n, stationary){
 
 
 
+
 #Function for state_dependent distribution probability matrix
 #Inputs:
 #mod <- list as described above
@@ -154,14 +155,20 @@ mvn.w2n <- function(params, m, n, stationary){
 #an m x m diagnonal matrix with the marginal probability for each state-dependent distribtion
 mvn.p_matrix <- function(mod, X){
   mvn <- function(m){
-    sig <- mod$VCV[,,m]
+    sig <- diag(mod$VARS[m,]) %*% mod$CORR[,,m] %*% diag(mod$VARS[m,])
+    #print('sig')
+    #print(sig)
     means <- mod$MEANS[m,]
+    #print('means')
+    #print(means)
     return(dmvnorm(X, mean = means, sigma = sig, checkSymmetry = F))
   }
   m <- dim(mod$TPM)[1]
   probs <- lapply(1:m, mvn)
   return(diag(probs))
 }
+
+mvn.p_matrix(test_mod, c(0,0))
 
 create_arb_2d_mod <- function(seed){
   set.seed(seed)
@@ -192,7 +199,8 @@ test_mod <- create_arb_2d_mod(123)
 
 test_vec <- mvn.n2w(test_mod, F)
 
-mvn.w2n(test_vec, 2, 2, F)
+t_tmod <-mvn.w2n(test_vec, 2, 2, F)
+test_mod$VARS
+mvn.p_matrix(test_mod, c(3,6))
 test_mod
-
 

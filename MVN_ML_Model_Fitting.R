@@ -1,12 +1,14 @@
 #Minus Log Likelihood Function 
 #X: matrix with each column being a separate variable, each row an observation 
 #of each variable at the same time (t x n), t = # of times observed, n = # of variables for multivariate norm
+library(abind)
+
 mvn.HMM_mllk <- function(parvec, X, m, n, stationary){
   mod <- mvn.w2n(parvec, m, n, stationary)
   if(!stationary){
     mod$ID <- sapply(mod$ID, FUN = threshold)
   }
-  print(mod)
+  #print(mod)
   tpm <- mod$TPM
   t <- dim(X)[1] # number of observations
   phi <- mod$ID * diag(mvn.p_matrix(mod, X[1,]))
@@ -24,7 +26,7 @@ mvn.HMM_mllk <- function(parvec, X, m, n, stationary){
 
 
 mvn.HMM_ml_mod_fit <- function(mod, data, stationary = T){
-  n <- dim(mod$VCV)[2] # number of variables for multivariate norm
+  n <- dim(mod$CORR )[2]# number of variables for multivariate norm
   m <- dim(mod$TPM)[1] # number of states
   parvec <- mvn.n2w(mod, stationary)
   #print(parvec)
@@ -46,22 +48,24 @@ ret_matrix <- matrix(
 #Give some more thought 
 #LKJ Distribution
 
-vcv_vec <- c(
-  as.vector(diag(4)+0.1),
-  as.vector(diag(4)*2+0.2),
-  as.vector(diag(4)*3+0.3)
-)
 
+corr <- abind(symMat(rep(0.25, 3), diag = F),
+      symMat(rep(0.5, 3), diag = F),
+      symMat(rep(-0.25, 3), diag = F), along = 3)
+
+corr
 returns_tmod <- list(
   TPM = stan_starting_tpm(c(.9,.8,.7)),
   ID = NA,
   MEANS = matrix(0, nrow = 3, ncol = 4),
-  VCV = array(data = vcv_vec, dim = c(4,4,3)),
+  CORR = corr,
+  VARS = matrix(c(1,1,1,1,2,2,2,2,3,3,3,3), byrow = T, nrow = 3, ncol = 4),
   Stationary = TRUE
 )
 
 tmatrix <- ret_matrix[1:100,] #Smaller Matrix for small testing
 
 mvnlktest <- mvn.HMM_ml_mod_fit(returns_tmod, tmatrix)
+mvnlktest
 nlm_mod <- mvnlktest
 #Correlation MATRIX let it be negative
