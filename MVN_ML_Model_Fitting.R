@@ -49,9 +49,9 @@ ret_matrix <- matrix(
 #LKJ Distribution
 
 
-corr <- abind(symMat(rep(0.25, 3), diag = F),
-      symMat(rep(0.5, 3), diag = F),
-      symMat(rep(-0.25, 3), diag = F), along = 3)
+corr <- abind(symMat(rep(0.25, 6), diag = F),
+      symMat(rep(0.5, 6), diag = F),
+      symMat(rep(0.75, 6), diag = F), along = 3)
 
 corr
 returns_tmod <- list(
@@ -62,7 +62,9 @@ returns_tmod <- list(
   VARS = matrix(c(1,1,1,1,2,2,2,2,3,3,3,3), byrow = T, nrow = 3, ncol = 4),
   Stationary = TRUE
 )
-
+mvn.n2w(returns_tmod, T)
+mvn.w2n(mvn.n2w(returns_tmod, T),3,4, T)
+returns_tmod
 tmatrix <- ret_matrix[1:100,] #Smaller Matrix for small testing
 
 mvnlktest <- mvn.HMM_ml_mod_fit(returns_tmod, tmatrix)

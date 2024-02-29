@@ -20,7 +20,13 @@ stan_starting_tpm <- function(probs){
   out <- (probs_diag - diag(remain) ) + remain
   return(out)
 }
-
+threshold <- function(val){
+  if(abs(val) < 1.0e-16){
+    return(0)
+  }else{
+    return(val)
+  }
+}
 
 #Need to make a function that takes the VCV array and turns it into the relevant parameters:
 #ar is a VCV as described above
@@ -48,15 +54,17 @@ mvn.vec_to_ar <- function(vector, n, m){
   dat <- array(data = dat, dim = c(n,n,m))
   return(dat)
 }
+mvn.ar_to_vec(corr)
+mvn.vec_to_ar(mvn.ar_to_vec(corr), 4, 3)
+test_array
 
-mvn.vec_to_ar(test_vec, 4, 3)
-threshold <- function(val){
-  if(abs(val) < 1.0e-16){
-    return(0)
-  }else{
-    return(val)
-  }
+#function for fining stationary distribution from a given tpm
+stat_dist <- function(tpm){
+  m <- dim(tpm)[1]
+  delta<-solve(t(diag(m)-tpm+1),rep(1,m))
+  return(delta)
 }
+
 
 
 
@@ -96,17 +104,11 @@ mvn.n2w <- function(mod, stationary){
 }
 
 
-#function for fining stationary distribution from a given tpm
-stat_dist <- function(tpm){
-  m <- dim(tpm)[1]
-  delta<-solve(t(diag(m)-tpm+1),rep(1,m))
-  return(delta)
-}
 
 mvn.w2n <- function(params, m, n, stationary){
   #index 3 is start of tpm, which goes for 3 + m*(m-1)
   tpm_last <- (m*(m-1))
-  corr_last <- tpm_last + (n*(n-1)/2)*m
+  corr_last <- tpm_last + (n*n - n*(n+1)/2)*m
   vars_last <- corr_last + m*n
   mns_last <- vars_last + m*n
   #Transistion Probability Matrix
@@ -120,7 +122,9 @@ mvn.w2n <- function(params, m, n, stationary){
   CORR <- mvn.vec_to_ar(corr, n, m)
   #Variance Matrix:
   vars <- params[(corr_last + 1):vars_last]
+  #print(vars)
   vars <- exp(vars)
+  #print(vars)
   VARS <- matrix(vars, nrow = m, ncol  = n)
   #Means:
   means <- params[(vars_last+1):mns_last]
@@ -200,7 +204,7 @@ test_mod <- create_arb_2d_mod(123)
 test_vec <- mvn.n2w(test_mod, F)
 
 t_tmod <-mvn.w2n(test_vec, 2, 2, F)
-test_mod$VARS
+test_mod$MEANS
 mvn.p_matrix(test_mod, c(3,6))
-test_mod
-
+t_tmod$MEANS
+test_vec

@@ -47,5 +47,5 @@ mvn.lbackward<-function(x,mod)
   return(lbeta)
 }
 #Testing Backward Probabilities: 
-log(exp(log(exp(mvn.lbackward(tmatrix, nlm_mod))*exp(mvn.lforward(mod = nlm_mod, x = tmatrix))))%*%c(1,1,1)) 
-
+log(exp(log(exp(mvn.lbackward(tmatrix, optim_mod))*exp(mvn.lforward(mod = optim_mod, x = tmatrix))))%*%c(1,1,1)) 
+optim_mod
