@@ -43,6 +43,8 @@ Model fitting is done through the `nlm` function. In order to use this, the para
 
 In order to avoid underflow, the process of standardizing the probabilities and summing the log of the standardization factors is used, again as described by Zucchini and MacDonald.
 
+
+
 ###Results
 
 ## Pseudoresiduals
@@ -86,3 +88,7 @@ print(var(qnorm(gen_resids)))
 qqnorm(qnorm(gen_resids))
 qqline(qnorm(gen_resids))
 ```
+
+The pseudoresidual problem remains. There was an initial problem in fitting the
+
+

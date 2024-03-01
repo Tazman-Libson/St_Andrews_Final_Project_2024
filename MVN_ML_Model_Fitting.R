@@ -8,7 +8,7 @@ mvn.HMM_mllk <- function(parvec, X, m, n, stationary){
   if(!stationary){
     mod$ID <- sapply(mod$ID, FUN = threshold)
   }
-  #print(mod)
+  if(runif(1) < 0.1){print(mod)}
   tpm <- mod$TPM
   t <- dim(X)[1] # number of observations
   phi <- mod$ID * diag(mvn.p_matrix(mod, X[1,]))
@@ -20,6 +20,7 @@ mvn.HMM_mllk <- function(parvec, X, m, n, stationary){
     l <- l + log(u)
     phi <- v/u #rescaled vector of forward probabilities
   }
+  if(runif(1) < 0.1){print(-l)}
   return(-l)
 }
 
@@ -31,7 +32,7 @@ mvn.HMM_ml_mod_fit <- function(mod, data, stationary = T){
   parvec <- mvn.n2w(mod, stationary)
   #print(parvec)
   #print( mvn.w2n(parvec, m, n, stationary))
-  fit <- nlm(mvn.HMM_mllk, parvec, X = data, n= n, m= m, stationary = stationary, steptol = 1e-5)
+  fit <- nlm(mvn.HMM_mllk, parvec, X = data, n= n, m= m, stationary = stationary, steptol = 1e-7, print.level = 2)
   #print(fit)
   mod <- mvn.w2n(fit$estimate, m = m, n = n, stationary = stationary)
   mod$minimum <- fit$minimum
@@ -71,3 +72,6 @@ mvnlktest <- mvn.HMM_ml_mod_fit(returns_tmod, tmatrix)
 mvnlktest
 nlm_mod <- mvnlktest
 #Correlation MATRIX let it be negative
+
+optim_test <- optim(mvn.n2w(returns_tmod, T), fn = mvn.HMM_mllk, X = tmatrix, m = 3, n = 4, stationary = T, control = list(maxit = 50000))
+optim_mod <- mvn.w2n(optim_test$par, 3, 4, T)

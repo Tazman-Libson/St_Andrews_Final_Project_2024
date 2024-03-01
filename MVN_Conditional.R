@@ -1,7 +1,7 @@
 
 mvn.cumul_vec <- function(mod, X){
   mvn <- function(m){
-    sig <- mod$VCV[,,m]
+    sig <- diag(mod$VARS[m,]) %*% mod$CORR[,,m] %*% diag(mod$VARS[m,])
     means <- mod$MEANS[m,]
     return(pmvnorm(lower = X, upper = Inf, mean = means, sigma = sig))
   }
@@ -58,9 +58,7 @@ mvn.pdf <- function(x,mod){
 qqnorm(mvn.cdf(tmatrix, optim_mod))
 hist(qnorm(mvn.cdf(tmatrix, optim_mod)))
 var(qnorm(mvn.cdf(tmatrix, optim_mod)))
-a <- qnorm(mvn.cdf(tmatrix, optim_mod))
-    mvn.cdf(tmatrix, optim_mod)    
-
+mean(qnorm(mvn.cdf(tmatrix, optim_mod)))
 mvn.p_matrix(optim_mod, tmatrix[52,])
 mvn.lforward(tmatrix,optim_mod)
 mvn.lbackward(tmatrix,optim_mod)

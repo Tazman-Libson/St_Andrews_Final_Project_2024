@@ -107,8 +107,8 @@ genmodstats <-GenModData %>% filter(code < 4) %>%
   summarize(vm = mean(vars), mm = mean(means), vmed = median(vars), mmed = median(means))
 
 ggplot(GenModData) +
-  geom_histogram(aes(x = vars))
-
+  geom_histogram(aes(x = means))
+library(tidyverse)
 13
 
 
