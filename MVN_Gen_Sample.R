@@ -31,7 +31,7 @@ initial_state <- function(delta, tpm){
 }
 
 mvn.generate_single_obs <- function(state, mod){
-  vcv <- mod$VCV[,,state]
+  vcv <- diag(mod$VARS[state,]) %*% mod$CORR[,,state] %*% diag(mod$VARS[state,])
   #print(vcv)
   means <- mod$MEANS[state,]
   #print(means)
@@ -43,7 +43,7 @@ mvn.generate_single_obs <- function(state, mod){
 mvn.generate_sample <- function(nobs, mod, seed = 138140){
   set.seed(seed)
   m <- dim(mod$TPM)[1]
-  n <- dim(mod$VCV)[2]
+  n <- dim(mod$CORR)[2]
   state <- initial_state(mod$ID, mod$TPM)
   sample <- matrix(nrow = nobs,  ncol = n)
   for(i in 1:nobs){
@@ -54,12 +54,4 @@ mvn.generate_sample <- function(nobs, mod, seed = 138140){
 }
 
 
-nlm_gen_sample <- mvn.generate_sample(300, nlm_mod)
 
-#Fit Model to Generated Data:
-
-gen_mod <- mvn.HMM_ml_mod_fit(returns_tmod, nlm_gen_sample, T)
-mean(as.vector((nlm_mod$VCV - gen_mod$VCV)/nlm_mod$VCV))
-(nlm_mod$MEANS - gen_mod$MEANS)
-nlm_mod
-gen_mod

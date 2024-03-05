@@ -3,10 +3,10 @@ create_arb_2d_mod <- function(seed){
   set.seed(seed)
   arb_means <- matrix(runif(4,-10, 10), nrow =2 )
   arb_vars <- sqrt(runif(4, min = 1, max = 3))
-  arb_vcv <- c(diag(arb_vars[1:2])%*%(symMat(runif(1), diag = F))%*%diag(arb_vars[1:2]),
-               diag(arb_vars[1:2])%*%(symMat(runif(1), diag = F))%*%diag(arb_vars[1:2]))
-  arb_vcv <- array(arb_vcv, dim = c(2,2,2))
-  arb_vcv <- array(arb_vcv, dim = c(2,2,2))
+  arb_vars <- matrix(arb_vars, nrow =2 )
+  arb_corr <- c(symMat(runif(1, min = -1), diag = F),
+                symMat(runif(1, min = -1), diag = F))
+  arb_corr <- array(arb_corr, dim = c(2,2,2))
   d <- runif(2, min= 0.5, max = 1)
   arb_tpm <- stan_starting_tpm(d)
   s1 <- runif(1)
@@ -14,56 +14,39 @@ create_arb_2d_mod <- function(seed){
   
   arb_mod <- list(
     MEANS = arb_means,
-    VCV = arb_vcv,
+    CORR = arb_corr,
+    VARS = arb_vars,
     ID = arb_id,
     TPM = arb_tpm
   )
   return(arb_mod)
 }
 
-arb_mod <- create_arb_2d_mod(1234)
 
-
-arb_data <- mvn.generate_sample(200, arb_mod)
-
-arb_nlm_fit_mod <- mvn.HMM_ml_mod_fit(create_arb_2d_mod(31415), arb_data, F)
-
-
-
-arb_mod$VCV - arb_nlm_fit_mod$VCV
-arb_mod$TPM
-arb_nlm_fit_mod$TPM
-arb_resids <- qnorm(mvn.cdf(arb_data, arb_nlm_fit_mod))
-hist(arb_resids)
-mean(arb_resids)
-var(arb_resids)
 #Test if variance and mean of pseudoresiduals are similarly N(-1, 1) distributed
 single_rand_test <- function(seed, stationary =F){
   mod <- create_arb_2d_mod(seed)
-  print(mod)
   data <- mvn.generate_sample(200, mod)
-  return(data)
   initial_mod <- create_arb_2d_mod(seed+100000)
   fit_mod <-mvn.HMM_ml_mod_fit(initial_mod, data, stationary)
   #Get resids:
-  if(length(unique(is.infinite(as.vector(fit_mod$VCV)))) == 1){
-  #print(fit_mod)
-  resids <- qnorm(mvn.cdf(data, fit_mod))
-  return(c(var(resids), mean(resids), fit_mod$code, fit_mod$iterations))}
-  else{
-    print('whoopsies')
-    return(
-      single_rand_test(seed -10000)
-    )
-  }
+  vector_resids <- qnorm(mvn.cdf(data, fit_mod))
+  element_resids <- qnorm(mvn.cdf_new(data, fit_mod))
+  vr_var <- var(vector_resids)
+  print(vr_var)
+  vr_mn <- mean(vector_resids)
+  el_var <- var(element_resids)
+  el_mean <- mean(element_resids)
+  print(el_mean)
+  print(fit_mod)
+  return(c(vr_var, vr_mn, el_var, el_mean, fit_mod$code, fit_mod$iterations))
 }
 
-as.integer(round(exp(log(1349501 + 16) + 10)))
 N <- 100
-resid_means_and_vars <- matrix(nrow = N, ncol = 4)
+resid_means_and_vars <- matrix(nrow = N, ncol = 6)
 
 
-for(i in 100:N){
+for(i in 1:N){
   print(i)
   resid_means_and_vars[i,] <- single_rand_test(1349507 + i)
 }

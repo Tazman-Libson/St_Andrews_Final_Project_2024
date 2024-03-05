@@ -1,0 +1,89 @@
+---
+title: "HMM_Report"
+author: "Tazman Libson"
+date: "2024-03-04"
+output: html_document
+---
+
+by Zucchini and MacDonald
+
+
+#Introduction to HMMs:
+Tranistion Probability Matrix. Initial distribution (if not stationary), state dependent distributions. 
+
+
+#Use of HMMs in Financial Contexts
+
+
+
+
+#Model Fitting Specifics:
+
+##Reparameterization
+As described by Zucchini and MacDonald, reparameterization is neccesary for direct likelihood maximization. The optimization functions `optim` an `nlm` both need unrestricted parameters. In the following descriptions, working parameters will be the reparameterized values, natural parameters will be the non transformed value. 
+
+###Transistion Probability Matrix and Initial Distribution
+Every element of the TPM must be between 0 and 1 inclusive. Each row of the TPM must sum to 1. This values can be reparameterized, as described by Zucchini and MacDonald. This is done by rescaling each tranistion probability by the sum of the non-diagonal elements and then taking the log of the rescaled values. This maps the working parameters to the full real line.
+
+
+###Means
+The means for the mulivariate gaussians don't need to be reparameterized because they are already unrestricted.
+
+###Correllation Matrices
+The correlation matrices are all positive definite, meaning they are symmetric and its eigenvalues are positive. In addition, the values on the diagonal are all 1, since each return always has a correlation of 1 with itself. The non-diagonal values all have values between -1 and 1 inclusive. With all of these restrictions, only the upper triangular values of the correlation matrix need to be estimated. A rescaled tan function is used to map the correlation values onto the reals. Here the working values for the correlations will be $\kappa$.
+$$
+\kappa_{ij} = \tan(\frac{\pi c_{ij}}{2}); i \neq j
+$$
+In order to get back to the natural value:
+$$
+c_{ij} = \frac{2\arctan(\kappa_{ij})}{\pi}
+$$
+
+###Variances
+The variances are all strictly postive. The working variances will be $\epsilon_{i}$.
+
+$$
+\epsilon_{i} = \log(\sigma^2_{i})
+$$
+##Likelihood Calculation
+The likelihood of a series of observations from a HMM can be calculated recursively through matrix muliplication as described by Zucchini and MacDonald. 
+
+$$
+L_{T} = \delta P(\mathbf{x}_{1})\Gamma P(\mathbf{x}_{2})\Gamma P(\mathbf{x}_{3}) ...\Gamma P(\mathbf{x}_{T}) \mathbf{1}'
+$$
+Where $P(\mathbf{x}_{i})$ is a diagonal matrix with entries:
+$$
+p_{i}(\mathbf{x}_{i}) = \mathbb{P}[\mathbf{x} = \mathbf{x}_{t} |s_{t} = i ]
+$$
+In order to avoid underflow, the log-likelihood is calculated. The exact method is described by Zucchini and MacDonald. 
+
+##Model Fitting
+
+Model fitting is done by using a optimizing function to find the parameters that find the smallest negative log-likelihood. Zucchini and MacDonald used the `nlm` function. However, for the data that I have been working with `optim` has found models with significantly higher likelihoods. 
+
+#Pseudoresiduals
+
+Pseudoresiduals are a method of model diagnositcs described by Zucchini and MacDonald. They create a cumulative density distribution for each time by conditioning off of the rest of the data set. For a properly fitted model, one would expect that these cdfs calculated for each observation would be uniformly distributed. Zucchini and MacDonald describe these cdf values as uniform pseudoresiduals. For the purpose of outlier identification, one can take the inverse cdf of a standard normal (`qnorm` in `R`). These are called nomral pseudoresiduals and they are expected to be standard normal, given the model is a good fit to the data.
+
+In Zucchini and MacDonald, these pseudoresiduals are only described in depth for univariate data. For multivariate data there is a decision to be made. Now that each time has a vector of observations, one can calculate pseudoresiduals of either the entire vector, or individual elements. 
+
+##General Method:
+For either way, the pseudoresidual is essentially the sum of a elelements
+
+$$
+\mathbb{P}(\mathbb{x}<\mathbb{x}_t|\mathbf{x}^{(-t)}) = \frac{\alpha_{t-1} \Gamma P(x_t) \beta_t'}{\alpha_{t-1}\Gamma\beta_t'}
+$$
+Here $P(x_t)$ has diagonal elements of the state dependent cumulative distributions rather than the state dependent probability density functions (Essentially `pmvnorm` instead of `dmvnorm`).
+
+In Zucchini and MacDonald they descibe this method and provide code for a discrete univariate case. 
+
+###Pseudoresidual of Entire Vector:
+Calculating the pseudoresidual of the entire vector inputs the entire observed vector as a lower bound for the `pmvnorm` function. Doing this method produced normal pseudoresiduals that appeared $N(-1,1)$ distributed as opposed to standard normal. This happened not only with the example financial dataset, but also with randomly generated data.
+
+###Pseudoresiduals of Sigle Elements:
+For a single element, the pseudoresidual is calculated in the same way above, but instead of inputing the entire observation as the lower bound, each element of the observation is inputed individually and the other variables are marginalized by taking the cdf over their entire supports. Using this method, the uniform pseudoresiduals were close to uniform for the model fitted to the example dataset as described above. 
+
+
+
+
+Zucchini and MacDonald

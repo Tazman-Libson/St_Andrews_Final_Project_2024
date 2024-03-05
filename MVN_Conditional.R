@@ -54,22 +54,8 @@ mvn.pdf <- function(x,mod){
   }
   return(dxc)
 }
-
+library(mvtnorm)
 qqnorm(mvn.cdf(tmatrix, optim_mod))
 hist(qnorm(mvn.cdf(tmatrix, optim_mod)))
 var(qnorm(mvn.cdf(tmatrix, optim_mod)))
 mean(qnorm(mvn.cdf(tmatrix, optim_mod)))
-mvn.p_matrix(optim_mod, tmatrix[52,])
-mvn.lforward(tmatrix,optim_mod)
-mvn.lbackward(tmatrix,optim_mod)
-
-sig <- diag(optim_mod$VARS[2,]) %*% optim_mod$CORR[,,2] %*% diag(optim_mod$VARS[2,])
-print('sig')
-print(sig)
-means <- optim_mod$MEANS[2,]
-print('means')
-print(means)
-dmvnorm(tmatrix[52,], mean = means, sigma = sig, checkSymmetry = F)
-
-tmatrix[52,]
-
