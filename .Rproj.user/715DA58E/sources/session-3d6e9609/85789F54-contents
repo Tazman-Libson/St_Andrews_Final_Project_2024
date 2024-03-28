@@ -1,0 +1,12 @@
+###Generating ititial Conditions:
+
+
+
+gen_initial_conditions <- function(data, m){
+  n <- dim(data)[2]
+  means <- matrix(0, nrow = n, ncol = m)
+  
+}
+
+
+

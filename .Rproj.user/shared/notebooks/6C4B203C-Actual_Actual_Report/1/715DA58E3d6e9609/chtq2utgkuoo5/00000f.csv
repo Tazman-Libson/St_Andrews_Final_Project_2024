@@ -1,0 +1,8 @@
+"0","##Plotting Vector Pseudoresiduals"
+"0","p5 <- ggplot(resid_df) + "
+"0","  geom_density(aes(x = Vec_resids), fill = 'black')+labs("
+"0","    title = 'Vector Pseudoresidual Density',"
+"0","    x = 'Normal Pseudoresidual Value',"
+"0","    y = 'Density')"
+"0",""
+"0","p5"

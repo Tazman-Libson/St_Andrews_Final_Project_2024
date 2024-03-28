@@ -1,0 +1,416 @@
+---
+title: "Defining Pseudoresiduals for Multivariate Gaussian HMMs"
+author: "Tazman Libson"
+date: "2024-03-25"
+output: pdf_document
+---
+
+```{r, include=FALSE}
+library(tinytex)
+library(tidyverse)
+library(mvtnorm)
+library(matlib)
+library(knitr)
+#Loading Data From Generated Data Tests:
+gen_data <- read.csv('Gen_Data_3_18' )
+gen_data_df <- data.frame(
+  'vec_var' = gen_data[,2],
+  'vec_mean' =  gen_data[,3],
+  'el_var' =  gen_data[,4],
+  'el_mean' =  gen_data[,5],
+ ' code' = gen_data[,6],
+ ' iterations' =  gen_data[,7]
+)
+gen_data_df <- gen_data_df %>% 
+  filter(is.na(vec_var) == F)
+#Loading Model fitted to the entire data Set
+big_mod <- readRDS('big_mod3state.RData')
+#Loading the Returns Data Set:
+example_returns <- readRDS('ExampleReturns.RData')
+
+#Function from Graphing Cookbook:
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL, title) {
+  library(grid)
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+source('MVN_support_functions.R')
+source('MVN_Forward_and_Backward.R')
+source('MVN_single_Pseudoresids.R')
+source('MVN_Conditional.R')
+ret_matrix <- matrix(
+  data = c(example_returns$Apple, example_returns$Microsoft, example_returns$Intel, example_returns$Meta),
+  ncol = 4
+)
+
+```
+
+# Introduction
+
+
+
+## Modelling Stock Returns
+
+```{r, echo = FALSE}
+#RETURNS GRAPH
+returns_df <-resid_df %>% pivot_longer(c(Apple, Microsoft, Intel, Meta), names_to = 'Stock', values_to = 'Return')
+
+
+ret_plot_df <- returns_df %>%
+  filter(Stock == 'Apple' | Stock =='Microsoft') %>%
+  filter(day_num < 62)
+
+
+ggplot(ret_plot_df) +
+  geom_line(aes(x = day_num, y =  Return, color = Stock))+
+  labs(
+    title = 'Apple and Microsoft Returns',
+    x = 'Day Number', 
+    y = 'Return'
+  )
+```
+
+## Hidden Markov Models in Finance
+
+
+# Methods
+
+## Likelihood Calculation
+
+## Conditional Ditributions
+```{r, echo = FALSE}
+#Plotting 2D- Multivariate Conditional CDF
+#Reduce Model
+big2dmodel <- list(
+  MEANS = big_mod$MEANS[,3:4],
+  CORR = big_mod$CORR[3:4,3:4,],
+  VARS = big_mod$VARS[,3:4],
+  TPM = big_mod$TPM,
+  ID = big_mod$ID
+)
+
+cond_dist_mat_vec2d <- function(obs_matrix, N = 10000){
+  n <- dim(obs_matrix)[2]
+  mat <- matrix(nrow = N**2, ncol = n)
+  seq1 <-seq(min(-5), max(obs_matrix[,1]), length.out = N)
+  seq2 <-seq(min(obs_matrix[,2]), max(obs_matrix[,2]), length.out = N)
+  for(i in 1:N){
+    mat[(N*(i-1)+1):(N*i),] <- matrix(c(rep(seq1[i], N), seq2), nrow = N, ncol =2)
+  }
+  return(mat)
+}
+
+mvn.pdf_vector <- function(x,mod, obsmat, index){
+  lenx         <- dim(x)[1]
+  m         <- dim(mod$TPM)[1]
+  dxc       <- matrix(NA,nrow=lenx,ncol=1)
+  Px        <- matrix(NA,nrow=lenx,ncol=m)
+  for (j in 1:lenx){ Px[j,] <- diag(mvn.p_matrix(mod, x[j,]))}
+  la        <- mvn.lforward(obsmat,mod)
+  lb        <- mvn.lbackward(obsmat,mod)
+  la        <- rbind(log(mod$ID),la)
+  lafact    <- apply(la,1,max)
+  lbfact    <- apply(lb,1,max)
+  for (i in 1:lenx)
+  {
+    foo      <- (exp(la[index,]-lafact[index])%*%mod$TPM)*exp(lb[index,]-lbfact[index])
+    foo      <- foo/sum(foo)
+    #if(i ==1){print(foo)}
+    dxc[i]  <- sum(Px[i,]%*%t(foo))
+  }
+  return(dxc)
+}
+funny_matrix <- matrix(c(-5,5,-5,5), nrow = 2, byrow = F)
+
+cond_mat2d <-cond_dist_mat_vec2d(funny_matrix, 100)
+
+
+cdfvals1 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,3:4], 500)
+cdfvals2 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 499)
+cdfvals3 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 501)
+cdfvals4 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 502)
+cdf_df <- data.frame(
+  Intel_Return = cond_mat2d[,1],
+  Meta_Return = cond_mat2d[,2],
+  Feb_5_2022 = cdfvals2,
+  Feb_4_2022 = cdfvals1,
+  Feb_3_2022 = cdfvals3,
+  Feb_2_2022 = cdfvals4
+)
+
+big_cdf_df <- cdf_df %>%
+  pivot_longer(c(Feb_2_2022, Feb_3_2022, Feb_4_2022, Feb_5_2022), values_to = 'pdf_eval', names_to = 'Date')
+
+ggplot(big_cdf_df, aes(x = Intel_Return, y = Meta_Return, z = pdf_eval))+
+  geom_contour_filled()+
+  facet_wrap(~Date)+
+  labs(
+    title = 'Conditional PDFs on Different Days',
+    x = 'Intel Return',
+    y = 'Meta Return'
+  )
+```
+
+```{r, include = FALSE} 
+##Demonstrative Graphs:
+#Showing Conditional Distribution
+mvn.pdf_mat <- function(X, mod){
+  m <- dim(mod$TPM)[1]
+  n <- dim(mod$CORR)[2]
+  output <- matrix(nrow = m, ncol = n)
+  prob_fun <- function(i){
+    prob_sub_fun <- function(m){
+      vars <- mod$VARS[,i]
+      means <- mod$MEANS[,i]
+      return(dnorm(X[i], mean = means[m], sd = vars[m]))
+    }
+    probs <- sapply(1:m,  FUN =prob_sub_fun)
+  }
+  probs <- sapply(1:n,  FUN =prob_fun, simplify = "matrix")
+  return(probs)
+}
+
+
+mvn.pdf_element <- function(x,mod, obsmat, index){
+  lenx         <- dim(x)[1]
+  lenobs <- dim(obsmat)[1]
+  m         <- dim(mod$TPM)[1]
+  n <- dim(mod$CORR)[2]
+  dxc       <- matrix(NA,nrow=lenx,ncol=n)
+  Px        <- array(NA,dim = c(m, n, lenx))
+  for (j in 1:lenx){ Px[,,j] <- mvn.pdf_mat( x[j,], mod)}
+  la        <- mvn.lforward(obsmat,mod)
+  lb        <- mvn.lbackward(obsmat,mod)
+  la        <- rbind(log(mod$ID),la)
+  lafact    <- apply(la,1,max)
+  lbfact    <- apply(lb,1,max)
+  for (i in 1:lenx)
+  {
+    foo      <- (exp(la[index,]-lafact[index])%*%mod$TPM)*exp(lb[index,]-lbfact[index])
+    foo      <- foo/sum(foo)
+    for(j in 1:n){
+      dxc[i,j]  <- sum(Px[,j,i]%*%t(foo))
+    }
+  }
+  return(dxc)
+}
+
+
+cond_dist_mat <- function(obs_matrix){
+  n <- dim(obs_matrix)[2]
+  mat <- matrix(nrow = 10000, ncol = n)
+  for(i in 1:n){
+    mat[,i] <- seq(min(obs_matrix[,i]), max(obs_matrix[,i]), length.out = 10000)
+  }
+  return(mat)
+}
+graph_cdf_index <- function(index){
+  important_index = index
+  
+  cond_mat <- cond_dist_mat(ret_matrix)
+  pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+  
+  combined_mat <- cbind(cond_mat, pdf_mat)
+  pdf_df <- data.frame(
+    apval = combined_mat[,1],
+    micval = combined_mat[,2],
+    metval = combined_mat[,3],
+    intval = combined_mat[,4],
+    appdf = combined_mat[,5],
+    micpdf = combined_mat[,6],
+    metpdf = combined_mat[,7],
+    intpdf = combined_mat[,8]
+  )
+  pd1 <- ggplot(pdf_df)+
+    geom_area(aes(x= apval, y = appdf), fill = 'red')+
+    geom_vline(xintercept = resid_df[[important_index,2]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Apple Return Value'
+    )
+  pd2 <- ggplot(pdf_df)+
+    geom_area(aes(x= micval, y = micpdf), fill = 'blue')+
+    geom_vline(xintercept = resid_df[[important_index,3]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Microsoft Return Value'
+    )
+  pd3 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = metpdf), fill = 'green')+
+    geom_vline(xintercept = resid_df[[important_index,5]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Meta Return Value'
+    )
+  pd4 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = intpdf), fill = 'yellow')+
+    geom_vline(xintercept = resid_df[[important_index,4]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Intel Return Value'
+    )
+  multiplot(pd1, pd2, pd3, pd4, cols = 2)
+}
+```
+```{r, echo = FALSE}
+  important_index = 500
+  
+  cond_mat <- cond_dist_mat(ret_matrix)
+  pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+  
+  pdf_df <- data.frame(
+    metval = cond_mat[,3],
+    intval = cond_mat[,4],
+    metpdf = pdf_mat[,3],
+    intpdf = pdf_mat[,4]
+  )
+  pd3 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = metpdf), fill = 'green')+
+    geom_vline(xintercept = resid_df[[important_index,5]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Meta Return Value'
+    )
+  pd4 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = intpdf), fill = 'yellow')+
+    geom_vline(xintercept = resid_df[[important_index,4]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Intel Return Value'
+    )
+  important_index = 501
+  
+  cond_mat <- cond_dist_mat(ret_matrix)
+  pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+  
+  pdf_df <- data.frame(
+    metval = cond_mat[,3],
+    intval = cond_mat[,4],
+    metpdf = pdf_mat[,3],
+    intpdf = pdf_mat[,4]
+  )
+  pd1 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = metpdf), fill = 'green')+
+    geom_vline(xintercept = resid_df[[important_index,5]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Meta Return Value'
+    )
+  pd2 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = intpdf), fill = 'yellow')+
+    geom_vline(xintercept = resid_df[[important_index,4]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Intel Return Value'
+    )
+
+
+```
+```{r, echo = FALSE}
+pd1 <- pd1 + labs(title = 'Feb 3, 2022')
+pd3 <- pd3 + labs(title = 'Feb 4, 2022')
+multiplot(pd1, pd2, pd3, pd4, cols = 2)
+
+```
+
+## PseudoResiduals
+
+```{r, echo=FALSE}
+## DEMONSTRATION GRAPHS
+demonstration_df_pdf <- data.frame(
+  X = seq(0, 3, length.out = 1000),
+  Y = dgamma(seq(0, 3, length.out = 1000), 2, 3)
+)
+set.seed(123)
+tsample <- rgamma(10000, 2,3)
+demonstration_df_resids <- data.frame(
+  X = tsample,
+  Y = pgamma(tsample,2, 3),
+  Z = qnorm( pgamma(tsample,2, 3))
+)
+numberthingy = 14
+
+
+dem_pdfplot <- ggplot(demonstration_df_pdf, aes(x = X, y = Y))+
+  geom_area()+
+  geom_vline(xintercept = tsample[numberthingy], color = 'red')+
+  labs(
+    y = 'Probability',
+    x = 'Observation Value',
+    title = 'Probability Density Function'
+  )
+
+
+dem_unifresidplot <- ggplot(demonstration_df_resids, aes(x = Y))+
+  geom_histogram(binwidth = .05, color = 'black', fill = 'black')+
+  geom_vline(xintercept = demonstration_df_resids$Y[numberthingy], color = 'red')+
+  labs(x = 'Cdf Value', title = 'Uniform Pseudoresidual', y = 'Count')
+
+
+dem_normresidplot <- ggplot(demonstration_df_resids, aes(x = Z))+
+  geom_density(fill = 'black')+
+  geom_vline(xintercept = demonstration_df_resids$Z[numberthingy], color = 'red')+
+  labs(x = 'qnorm(cdf value)', title = 'Normal Pseudoresidual', y = 'Density')
+multiplot(dem_pdfplot, dem_unifresidplot, dem_normresidplot)
+
+```
+
+
+## Generating Data
+
+
+
+# Results
+
+## Pseudoresiduals of Example Dataset
+
+
+
+
+
+## Generated Data Results
+
+
+# Conclusion
+
+## Taking Stock of Vector Pseudoresiduals
+
+## Extensions
+
+
+# Appendix
+
+## Formula for Conditional Distributions
+- Forward and Backward probabilities defitions
+-
+
+## Code

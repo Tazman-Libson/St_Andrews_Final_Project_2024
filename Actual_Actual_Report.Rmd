@@ -1,0 +1,973 @@
+---
+title: "Defining Pseudoresiduals for Multivariate Gaussian HMMs"
+author: "Tazman Libson"
+date: "2024-03-25"
+output: pdf_document
+---
+
+```{r, include=FALSE}
+library(tinytex)
+library(tidyverse)
+library(mvtnorm)
+library(matlib)
+library(knitr)
+library(RColorBrewer)
+library(broom)
+#Loading Data From Generated Data Tests:
+gen_data <- read.csv('Gen_Data_3_18' )
+gen_data_df <- data.frame(
+  'vec_var' = gen_data[,2],
+  'vec_mean' =  gen_data[,3],
+  'el_var' =  gen_data[,4],
+  'el_mean' =  gen_data[,5],
+ ' code' = gen_data[,6],
+ ' iterations' =  gen_data[,7]
+)
+gen_data_df <- gen_data_df %>% 
+  filter(is.na(vec_var) == F)
+#Loading Model fitted to the entire data Set
+big_mod <- readRDS('big_mod3state.RData')
+#Loading the Returns Data Set:
+example_returns <- readRDS('ExampleReturns.RData')
+
+#Function from Graphing Cookbook:
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL, title) {
+  library(grid)
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+source('MVN_support_functions.R')
+source('MVN_Forward_and_Backward.R')
+source('MVN_single_Pseudoresids.R')
+source('MVN_Conditional.R')
+ret_matrix <- matrix(
+  data = c(example_returns$Apple, example_returns$Microsoft, example_returns$Intel, example_returns$Meta),
+  ncol = 4
+)
+el_resids <- qnorm(mvn.cdf_element(ret_matrix, big_mod))
+vec_resids <- qnorm(mvn.cdf_vector(ret_matrix, big_mod))
+resid_df <- example_returns %>%
+  mutate(Apple_resids = el_resids[,1]) %>%
+  mutate(Mic_resids = el_resids[,2]) %>%
+  mutate(Meta_resids = el_resids[,4]) %>%
+  mutate(Intel_resids = el_resids[,3]) %>%
+  mutate(Vec_resids = vec_resids)
+resid_df <- resid_df %>%
+  mutate(day_num = rev(1:dim(resid_df)[1]))
+
+```
+
+```{r, include=FALSE}
+filter(brewer.pal.info, colorblind == T)
+mypal <- palette(brewer.pal(name='Blues', n =9))
+```
+
+# Introduction
+
+ Hidden Markov models (HMMs) are a class of stochastic models with a wide range of applications in Ecology[1], Voice Recognition, Finance[2], and many other fields. They are most often used with either temporal or spacial data. There are two main components for a hidden Markov model, an unobserved or hidden process, and an observed variable. The unobserved process is a discrete set of states, more specifically described by a Markov chain. The interpretation of these states depend on the application of the model. For example, in finance, an interpretation for a 3 state model would be a bearish/growth state, a bullish/decay state, and a mixed middle state. The key feature of these states is that they cannot be directly observed. 
+ 
+ Each of these states have an associated state dependent distribution. These distributions are what determine the values of the observed variable. Again in a financial context, these observed variable could be the returns of a stock, interest rates, or any value one could consistently measure over a period of time. 
+ 
+ For this report, daily returns data for 4 companies: Apple, Microsoft, Meta, and Intel between Feb 1st 2019 and Feb 1st 2024 were used. For the data, the returns are defined as $100\log(s_t/s_{t-1})$, where $s_t$ is the price on day $t$. This data was downloaded from https://www.nasdaq.com/market-activity/stocks/ on Feb 1st, 2024.
+ The Hidden Markov models fitted will be fitting multivariate data. So they will be modelling all four of these stocks simultaneously. This will allow the models to take into account correlations between stocks. As seen in the small slice of the returns for Microsoft and Apple plotted below, the two return values rise and fall at similar days. In financial modelling, stocks are often correlated, and have changing correlation over time.[3] Multivariate hidden markov models will accommodate for this. 
+
+
+```{r, echo = FALSE}
+#RETURNS GRAPH
+returns_df <-resid_df %>% pivot_longer(c(Apple, Microsoft, Intel, Meta), names_to = 'Stock', values_to = 'Return')
+
+
+ret_plot_df <- returns_df %>%
+  filter(Stock == 'Apple' | Stock =='Microsoft') %>%
+  filter(day_num < 62)
+
+
+ggplot(ret_plot_df) +
+  geom_line(aes(x = day_num, y =  Return, color = Stock))+
+  labs(
+    title = 'Apple and Microsoft Returns',
+    x = 'Day Number', 
+    y = 'Return'
+  )
+```
+Using HMMs in finance certainly is not a new development, however, using HMMs and the typical HMM model diagnostics to fit multivariate data leads to some issues. Specifically, this report is going to investigate how using multivariate data affects the pseudoresiduals for HMMs. 
+
+## Model Definition
+
+### Unobserved Markov Chain
+ 
+ The unobserved process described by a Markov chain. This chain will have $m$ states. The state at time $t$ will be written as $c_t$.  These states are discrete.  The probability from going to state $j$ from state $i$ at time $t$ will be referred to as $p_{ij}$. These transition probability matrix are used to make the one step transition probability matrix. 
+
+$$
+  \Gamma=[p_{ij}];\quad p_{ij} = \mathbb{P}[c_{t}=j|c_{t-1} = i]
+$$
+For all our cases, the markov chains will all be homogeneous, meaning that $\Gamma$ is independent of time. This assumption is to simplify the model and is required for the likelihood calculation later, and thus the entire model fitting process.
+
+The transition probability matrix will allow for the expected evolution of states to be calculated given an initial state distribution. A state distribution $\mathbf{u}_t$ is a vector of length $m$ where $u_i$ is the probability at time $t$ to for $c_t = i$. 
+$$
+\mathbf{u}_t =\{u_1, u_2,...,u_m\},~~~~u_i = \mathbb{P}[c_t= i]
+$$
+To get the state distribution for the following time, one takes the product of the the current state distribution and the transition probability matrix. 
+$$
+\mathbf{u}_t\Gamma=\mathbf{u}_{t+1}
+$$
+
+The stationary distribution of a markov chain is a state distribution where, when multiplied with the transition probability matrix, remains unchanged. It is defined as follows:
+$$
+\mathbf{u}\Gamma = \mathbf{u}
+$$
+It can be shown that every markov chain that will be used in our models has a stationary distribution. 
+
+For model specification, one has to either indicate a specific initial distribution, or indicate that the model is stationary, and the stationary distribution will be used as the initial distribution. 
+
+### State Dependent Distributions
+
+In our case, the state dependent distributions will be an $n$-dimension multivariate Gaussian. 
+For every state $i \in (1,... , m)$, the state-dependent distribution will be defined as follows:
+$$
+p_{i}(\mathbf{x}_{t}) = \mathbb{P}[\mathbf{X}_t = \mathbf{x}_t|c_t = i]
+$$
+For every state $i \in \{1,..,m\}$ the probability density function will have a $n \times n$ variance covariance matrix $\Sigma_i$ and a vector of means of length $n$ $\mu_i$.
+
+$$
+\mathbf{X}_t |c_t=i\sim N(\mu_i, \Sigma_i)
+$$
+Below one can see the marginalized probability density function for the apple returns of the fitted model. Although each state has a normal distribution, each one has a different mean and variance. For the technology stocks that were fitted for the model, each state has a different 4 dimensional normal distribution. 
+``` {r, echo = FALSE}
+get_single_stock_info <- function(mod, n_num){
+  means <- mod$MEANS[,n_num]
+  vars <- mod$VARS[, n_num]
+  return(list(
+    MEANS = means,
+    VARS = vars))
+}
+
+applerange <- seq(-14, 14, length.out = 10000)
+apple_pdf_df <- data.frame(
+  ret_val = applerange
+)
+single_stock_pdf_given_state <- function(xval, m, n, mod){
+  pars <- get_single_stock_info(mod, n)
+  return(
+    dnorm(xval, mean = pars$MEANS[m], sd = pars$VARS[m])
+  )
+}
+apple_pdf_df <- apple_pdf_df %>%
+  mutate(state1 = single_stock_pdf_given_state(ret_val, m = 1, n = 1, mod= big_mod)) %>%
+  mutate(state2 = single_stock_pdf_given_state(ret_val, m = 2, n = 1, mod= big_mod)) %>%
+  mutate(state3 = single_stock_pdf_given_state(ret_val, m = 3, n = 1, mod= big_mod)) %>%
+  pivot_longer(c(state1, state2, state3), names_to ='State', values_to = 'pdfeval')
+
+ggplot(apple_pdf_df)+
+  geom_line(aes(x = ret_val, y = pdfeval,color = State))+
+  labs(
+    title = 'Marinalized PDFs for Apple Returns',
+    x = 'Return Value',
+    y = 'dnorm(x)'
+  )+scale_colour_manual(values  = c('black', 'red', 'blue'))
+  # )+scale_color_discrete(name = 'State', 
+  #                      labels  = c(1, 3, 2))
+```
+To summarise, each model needs to have the following parameters specified:  
+* Transition Probability Matrix, $\Gamma$  
+* Initial Distribution/Stationary Distribution, $\delta$  
+* Means, $\mu_i$, and Variance Covariance Matrix, $\Sigma_i$, for each state $i \in \{1,...,m\}$
+
+Now let us go through how one can find values for these parameters. 
+
+# Model Fitting
+
+Model fitting was done by maximum likelihood estimation, where the likelihood was calculated for an initial model, then using the nonlinear maximization function `nlm`, one finds the parameter values which finds the model with the largest likelihood.
+
+## Likelihood Calculation
+
+It can be shown that the likelihood of a series of observations from a HMM can be calculated recursively through matrix multiplication. Here $\mathbf{X}^{(T)}$ indicates all the observations from $t = 1,...,T$.
+
+$$
+L_{T}= \mathbb{P}[\mathbf{X^{(T)}} = \mathbf{x}^{(T)}] = \delta P(\mathbf{x}_{1})\Gamma P(\mathbf{x}_{2})\Gamma P(\mathbf{x}_{3}) ...\Gamma P(\mathbf{x}_{T})\mathbf{1}'
+$$
+Where $P(\mathbf{x}_{i})$ is a diagonal matrix with entries:
+$$
+p_{i}(\mathbf{x}_{t}) = \mathbb{P}[\mathbf{X}_t = \mathbf{x}_{t} |c_{t} = i ]
+$$
+The calculation takes into account the probability of each observation under each state-based distribution and is scaled by the probability of being in each state at the time of each observation. To avoid underflow, the log-likelihood is calculated. 
+
+### Reparameterization
+
+ The optimization function `nlm` both need unrestricted parameters. The means $\mu$ are unrestricted, but otherwise, the other parameters, the variance covariance matrices and the transition probability matrix all have several restrictions. These parameters will be have to be transformed  In the following descriptions, working parameters will be the reparameterized values, natural parameters will be the non transformed value.  
+
+#### Transition Probability Matrix  
+
+The following method of reparameterization has been previously described [cite Z and M]. The values of the transition probability matrix are all between 0 and 1 inclusive. The rows also must all sum to 1. So there are only $m(m-1)$ free parameters. For the following, the diagonal elements will be considered to be 1 minus the sum of the other elements of their row, so the non diagonal elements are the ones being estimated. These elements are first transformed to be on the non-negative reals by dividing them by the diagonal elements. These values are then mapped to the entire real line by the log function. Here the natural transition probabilities will be $p_{ij}$ and the working transition probabilities will be $\tau_{ij}$.
+
+$$
+\tau_{ij} = \log(\frac{p_{ij}}{p_{ii}}), ~~~i\neq j;~\tau_{ii}=1~\forall~i\in\{1,...,m\}
+$$
+$$
+p_{ij} = \frac{\exp(\tau_{ij})}{1+\Sigma_{i\neq k}exp(\tau_{ik})}
+$$
+
+#### Variance Covariance Matrix  
+
+The restrictions on the variance covariance matrices make it inconvenient to directly transform the matrix into working parameters. The matrices is positive definite, meaning they are symmetric and its eigenvalues are positive. In addition, the square of all of the non-diagonal elements cannot be larger then the product of both of the variances of its row or column number (i.e. for covariance $c_{ij} = \text{Cov}(X_i, X_j)$, $[c_{ij}]^2 \leq \text{Var}(X_i){Var}(X_j)$). This comes from the Cauchy-Schwartz inequality [Citation Needed].  Thus every non diagonal element has a unique range of possible values depending on the values of variances for each of the variables of the Gaussian. This problem is made easier by instead, estimating the variances and correlation matrices separately and then getting the variance covariance matrices from there. 
+
+The correlation matrices are all positive definite. In addition, the values on the diagonal are all 1, since each return always has a correlation of 1 with itself. The non-diagonal values all have values between -1 and 1 inclusive. With all of these restrictions, only the upper triangular values of the correlation matrix need to be estimated. A scaled tan function is used to map the correlation values onto the reals. Here the natural values will be $k_{jh}^h$ and the working values will be $\kappa_{ij}^h$ with $ij$ indicating the position in the correlation matrix and $i$ indicating the state for which the correlation is used. 
+$$
+\kappa_{jh}^i = \tan(\frac{\pi c_{jh}^i}{2}),~~~k_{jh}^i = \frac{2\arctan(\kappa_{jh}^i)}{\pi}; h \neq j
+$$
+
+```{r, echo = F, fig.dim= c(3, 5)}
+#Graph of arc_tan
+tandf <- data.frame(
+  xs = seq(-.99, .99, length.out = 1000),
+  ys = tan(pi*seq(-.99, .99, length.out = 1000)/2)
+)
+ggplot(tandf)+
+  geom_line(aes(x = xs, y = ys), linewidth = 1)+
+  labs(title= 'Correlation Matrix Reparameterization', x = 'Natural', y = 'Working')
+```
+
+The variances are all strictly positive so they can be reparameterized by using a log function. The working variance will be $\sigma_{ij}^2$, the natural variance will be $s_{ij}^2$. Here $i$ is one of the $m$ states and $j$ is one of the $n$ observed variables. 
+
+$$
+\sigma_{ij} = \log(s^2_{ij}),~~~~s^2_{ij}=\exp(\sigma_{ij})
+$$
+
+
+## Conditional Ditributions
+
+In order to describe pseudoresiduals, we first must define conditional distributions. First we need to define a small bit of notation. The observation vector $\mathbf{X}^{(-t)}$ will be defined as all of the observations from time $1,...T$ except $t$. So it represents $\{X_1, X_2, ... X_{t-1}, X_{t+1}, X_{t+2},... X_T \}$. With that conditional distributions are defined as the following probability distribution:
+
+$$
+\mathbb{P}[\mathbf{X}_{t} = \mathbf{x}| \mathbf{X}^{(-t)}=\mathbf{x}^{(-t)}]
+$$
+So conditional distributions is the probability distribution of $\mathbf{X}_t| \mathbf{X}^{(-t)}=\mathbf{x}^{(-t)}$ or the probability of observing a specific value under the model at time $t$ given every other observation. These distributions can act as the model's predicted distribution for each time. As seen below, the conditional distribution is different for each time. 
+```{r, echo = FALSE}
+#Plotting 2D- Multivariate Conditional CDF
+#Reduce Model
+big2dmodel <- list(
+  MEANS = big_mod$MEANS[,3:4],
+  CORR = big_mod$CORR[3:4,3:4,],
+  VARS = big_mod$VARS[,3:4],
+  TPM = big_mod$TPM,
+  ID = big_mod$ID
+)
+
+cond_dist_mat_vec2d <- function(obs_matrix, N = 10000){
+  n <- dim(obs_matrix)[2]
+  mat <- matrix(nrow = N**2, ncol = n)
+  seq1 <-seq(min(-5), max(obs_matrix[,1]), length.out = N)
+  seq2 <-seq(min(obs_matrix[,2]), max(obs_matrix[,2]), length.out = N)
+  for(i in 1:N){
+    mat[(N*(i-1)+1):(N*i),] <- matrix(c(rep(seq1[i], N), seq2), nrow = N, ncol =2)
+  }
+  return(mat)
+}
+
+mvn.pdf_vector <- function(x,mod, obsmat, index){
+  lenx         <- dim(x)[1]
+  m         <- dim(mod$TPM)[1]
+  dxc       <- matrix(NA,nrow=lenx,ncol=1)
+  Px        <- matrix(NA,nrow=lenx,ncol=m)
+  for (j in 1:lenx){ Px[j,] <- diag(mvn.p_matrix(mod, x[j,]))}
+  la        <- mvn.lforward(obsmat,mod)
+  lb        <- mvn.lbackward(obsmat,mod)
+  la        <- rbind(log(mod$ID),la)
+  lafact    <- apply(la,1,max)
+  lbfact    <- apply(lb,1,max)
+  for (i in 1:lenx)
+  {
+    foo      <- (exp(la[index,]-lafact[index])%*%mod$TPM)*exp(lb[index,]-lbfact[index])
+    foo      <- foo/sum(foo)
+    #if(i ==1){print(foo)}
+    dxc[i]  <- sum(Px[i,]%*%t(foo))
+  }
+  return(dxc)
+}
+funny_matrix <- matrix(c(-5,5,-5,5), nrow = 2, byrow = F)
+
+cond_mat2d <-cond_dist_mat_vec2d(funny_matrix, 100)
+
+
+cdfvals1 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,3:4], 500)
+cdfvals2 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 499)
+cdfvals3 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 501)
+cdfvals4 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 502)
+cdf_df <- data.frame(
+  Intel_Return = cond_mat2d[,1],
+  Meta_Return = cond_mat2d[,2],
+  Feb_5_2022 = cdfvals2,
+  Feb_4_2022 = cdfvals1,
+  Feb_3_2022 = cdfvals3,
+  Feb_2_2022 = cdfvals4
+)
+
+big_cdf_df <- cdf_df %>%
+  pivot_longer(c(Feb_2_2022, Feb_3_2022, Feb_4_2022, Feb_5_2022), values_to = 'pdf_eval', names_to = 'Date')
+
+ggplot(big_cdf_df, aes(x = Intel_Return, y = Meta_Return, z = pdf_eval))+
+  geom_contour_filled()+
+  facet_wrap(~Date)+
+  labs(
+    title = 'Maringal Conditional PDFs on Different Days',
+    x = 'Intel Return',
+    y = 'Meta Return'
+  )
+```
+Unfortunately the full conditional distributions for a given time cannot be easily displayed because of the dimensionality of the distribution. For the distributions above, the other two stocks have been marginalized out. In the figure, one can see that the conditional distributions change day by day. This is very noticeable for the distribution for February 4th where the distribution becomes significantly more disperse. This effect is seen for all stocks that were used in the fitted model. 
+
+```{r, include = FALSE} 
+##Demonstrative Graphs:
+#Showing Conditional Distribution
+mvn.pdf_mat <- function(X, mod){
+  m <- dim(mod$TPM)[1]
+  n <- dim(mod$CORR)[2]
+  output <- matrix(nrow = m, ncol = n)
+  prob_fun <- function(i){
+    prob_sub_fun <- function(m){
+      vars <- mod$VARS[,i]
+      means <- mod$MEANS[,i]
+      return(dnorm(X[i], mean = means[m], sd = vars[m]))
+    }
+    probs <- sapply(1:m,  FUN =prob_sub_fun)
+  }
+  probs <- sapply(1:n,  FUN =prob_fun, simplify = "matrix")
+  return(probs)
+}
+
+
+mvn.pdf_element <- function(x,mod, obsmat, index){
+  lenx         <- dim(x)[1]
+  lenobs <- dim(obsmat)[1]
+  m         <- dim(mod$TPM)[1]
+  n <- dim(mod$CORR)[2]
+  dxc       <- matrix(NA,nrow=lenx,ncol=n)
+  Px        <- array(NA,dim = c(m, n, lenx))
+  for (j in 1:lenx){ Px[,,j] <- mvn.pdf_mat( x[j,], mod)}
+  la        <- mvn.lforward(obsmat,mod)
+  lb        <- mvn.lbackward(obsmat,mod)
+  la        <- rbind(log(mod$ID),la)
+  lafact    <- apply(la,1,max)
+  lbfact    <- apply(lb,1,max)
+  for (i in 1:lenx)
+  {
+    foo      <- (exp(la[index,]-lafact[index])%*%mod$TPM)*exp(lb[index,]-lbfact[index])
+    foo      <- foo/sum(foo)
+    for(j in 1:n){
+      dxc[i,j]  <- sum(Px[,j,i]%*%t(foo))
+    }
+  }
+  return(dxc)
+}
+
+
+cond_dist_mat <- function(obs_matrix){
+  n <- dim(obs_matrix)[2]
+  mat <- matrix(nrow = 10000, ncol = n)
+  for(i in 1:n){
+    mat[,i] <- seq(min(obs_matrix[,i]), max(obs_matrix[,i]), length.out = 10000)
+  }
+  return(mat)
+}
+graph_cdf_index <- function(index){
+  important_index = index
+  
+  cond_mat <- cond_dist_mat(ret_matrix)
+  pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+  combined_mat <- cbind(cond_mat, pdf_mat)
+  pdf_df <- data.frame(
+    apval = combined_mat[,1],
+    micval = combined_mat[,2],
+    metval = combined_mat[,3],
+    intval = combined_mat[,4],
+    appdf = combined_mat[,5],
+    micpdf = combined_mat[,6],
+    metpdf = combined_mat[,7],
+    intpdf = combined_mat[,8]
+  )
+  pd1 <- ggplot(pdf_df)+
+    geom_area(aes(x= apval, y = appdf), fill = 'red')+
+    geom_vline(xintercept = resid_df[[important_index,2]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Apple Return Value'
+    )
+  pd2 <- ggplot(pdf_df)+
+    geom_area(aes(x= micval, y = micpdf), fill = 'blue')+
+    geom_vline(xintercept = resid_df[[important_index,3]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Microsoft Return Value'
+    )
+  pd3 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = metpdf), fill = 'green')+
+    geom_vline(xintercept = resid_df[[important_index,5]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Meta Return Value'
+    )
+  pd4 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = intpdf), fill = 'yellow')+
+    geom_vline(xintercept = resid_df[[important_index,4]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Intel Return Value'
+    )
+  
+  
+  multiplot(pd1, pd2, pd3, pd4, cols = 2)
+}
+```
+```{r, echo = FALSE}
+#graph_cdf_index(500)
+#graph_cdf_index(501)
+```
+```{r, echo = FALSE}
+  important_index = 500
+  
+  cond_mat <- cond_dist_mat(ret_matrix)
+  pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+  
+  pdf_df <- data.frame(
+    metval = cond_mat[,3],
+    intval = cond_mat[,4],
+    metpdf = pdf_mat[,3],
+    intpdf = pdf_mat[,4]
+  )
+  pd3 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = metpdf), fill = 'green')+
+    geom_vline(xintercept = resid_df[[important_index,5]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Meta Return Value'
+    )
+  pd4 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = intpdf), fill = 'yellow')+
+    geom_vline(xintercept = resid_df[[important_index,4]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Intel Return Value'
+    )
+  important_index = 501
+  
+  cond_mat <- cond_dist_mat(ret_matrix)
+  pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+  
+  pdf_df <- data.frame(
+    metval = cond_mat[,3],
+    intval = cond_mat[,4],
+    metpdf = pdf_mat[,3],
+    intpdf = pdf_mat[,4]
+  )
+  pd1 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = metpdf), fill = 'green')+
+    geom_vline(xintercept = resid_df[[important_index,5]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Meta Return Value'
+    )
+  pd2 <- ggplot(pdf_df)+
+    geom_area(aes(x= metval, y = intpdf), fill = 'yellow')+
+    geom_vline(xintercept = resid_df[[important_index,4]])+
+    labs(
+      y = 'Pdf Evaluation',
+      x = 'Intel Return Value'
+    )
+
+
+```
+```{r, echo = FALSE}
+pd1 <- pd1 + labs(title = 'Feb 3, 2022')
+pd3 <- pd3 + labs(title = 'Feb 4, 2022')
+multiplot(pd1, pd2, pd3, pd4, cols = 2)
+
+```
+
+So far, only conditional probability density functions have been show. For pseudoresiduals, the conditional cumulative density functions will be needed. These will be indicated by $F(X_t)$ and will be defined as follows:
+
+$$
+F(X_t) = \mathbb{P}[X_{t} \leq x_t| \mathbf{X}^{(-t)}=\mathbf{x}^{(-t)}]
+$$
+
+## Pseudoresiduals
+
+With these conditional distributions, we can now define pseudoresiduals. Pseudoresiduals are a tool for outlier checking and checking model fit. The definition that will be used here will be from the Zucchini and Macdonald textbook on Hidden Markov Models, which has been widely used in the use of HMMs. 
+
+First we will define uniform pseudoresiduals. Uniform pseudoresiduals are the conditional cumulative distribution function evaluated for every observation in the observation dataset. This will generate values that are between 0 and 1. The utility here is that for a well fitted model, these uniform pseudoresiduals should be uniformly distributed for a well fitted model.
+
+$$
+F(X_t)\sim U(0,1)~~~\text{(for a well fitted model)}
+$$
+There are some issues with these values, the main issue is that they are not well suited for outlier detection. Outliers here would be defined as values on the fringe of their respective conditional distributions. For uniform pseudoresiduals, outliers would be values close to 0 or 1, however values that would be considered outliers would be hard to distinguish from one another(e.g. distinguishing between 0.99 and 0.999)[*].
+
+With these uniform pseudoresiduals we can define normal pseudoresiduals. By taking the inverse standard normal function, $\Phi^{-1}$, of the uniform pseudoresiduals we get normal pseudoresiduals. This solves the outlier problem, where outliers are clearer, and tests for conformation to the standard normal are well defined[5].
+
+$$
+\Phi^{-1}(F(X_t))\sim N(0,1) ~~~\text{(for a well fitted model)}
+$$
+Below is a graphical representation of the process to get from a conditional distribution to a normal pseudoresidual. The red line indicates how an observation is transformed through the path to a normal pseudoresidual. The observation value is first inputed into a conditional cumulative density function. This yields a normal pseudoresidual. The inverse standard normal is then applied to the uniform pseudoresidual to get a normal pseudoresidual. 
+\begin(center)
+```{r, echo=FALSE}
+## DEMONSTRATION GRAPHS
+demonstration_df_pdf <- data.frame(
+  X = seq(0, 3, length.out = 1000),
+  Y = dgamma(seq(0, 3, length.out = 1000), 2, 3)
+)
+
+set.seed(123)
+tsample <- rgamma(10000, 2,3)
+demonstration_df_resids <- data.frame(
+  X = tsample,
+  Y = pgamma(tsample,2, 3),
+  Z = qnorm( pgamma(tsample,2, 3))
+)
+numberthingy = 14
+lessthantest <- function(x, y){
+  if(x < y){
+    return(0)
+  }
+  return(1)
+}
+demonstration_df_pdf <- demonstration_df_pdf %>%
+  mutate(atribute = sapply( X, lessthantest, tsample[numberthingy]) )
+
+dem_pdfplot <- ggplot(demonstration_df_pdf, aes(x = X, y = Y))+
+  geom_area()+
+  geom_vline(xintercept = tsample[numberthingy], color = 'red')+
+  labs(
+    y = 'Probability',
+    x = 'Observation Value',
+    title = 'Probability Density Function'
+  )
+
+
+dem_unifresidplot <- ggplot(demonstration_df_resids, aes(x = Y))+
+  geom_histogram(binwidth = .05, color = 'black', fill = 'black')+
+  geom_vline(xintercept = demonstration_df_resids$Y[numberthingy], color = 'red')+
+  labs(x = 'Cdf Value', title = 'Uniform Pseudoresidual', y = 'Count')
+
+
+dem_normresidplot <- ggplot(demonstration_df_resids, aes(x = Z))+
+  geom_density(fill = 'black')+
+  geom_vline(xintercept = demonstration_df_resids$Z[numberthingy], color = 'red')+
+  labs(x = 'qnorm(cdf value)', title = 'Normal Pseudoresidual', y = 'Density')
+multiplot(dem_pdfplot, dem_unifresidplot, dem_normresidplot)
+
+```
+\end{center}
+From now on we will only work with normal pseudoresiduals, so for convenience they will be referred to as only pseudoresiduals. This definition has been assuming univariate data. Let us now proceed to defining pseudoresiduals for multivariate data.
+
+The above definition has been clearly established by Zucchini and Macdonald. This has been widely used in the application of HMMs. This definition becomes ambiguous when applied to multivariate data. The crux of the issue is how the data is iputed to the conditional cumulative density function. I have come up with two separate metrics which will be defined as vector and element pseudoresiduals
+
+## Vector Pseudoresiduals
+
+Vector pseudoresiduals are acquired by inputing the entire vector (hence the name) of observations for each time into the conditional cdf. Here $\mathbf{X}_{t} \leq \mathbf{x}_t$ will indicate $\{X_t^1, ..., X_t^n\} \leq \{x_t^1,...,x_t^n\}$. In other words, the probability that each separate variable $X_t^j$ is less than or equal to the observed value for that variable at that time $x_t^j$ for all $j\in\{1,...,n\}$. 
+
+$$
+F(\mathbf{X}_t)= \mathbb{P}[\mathbf{X}_{t} \leq \mathbf{x}_t| \mathbf{X}^{(-t)}=\mathbf{x}^{(-t)}]
+$$
+This will yield a single pseudoresidual value for each time, so there will be a total of $T$ vector pseudoresiduals
+
+## Element Pseudoresiduals
+
+Element pseudoresiduals are acquired by inputing each element of the observation vector into a marginalized conditional cdf individually. Again $X_t^j\in \mathbf{X}_t$ indicates an observation of one of the variables $j$ at time $t$ then the marginalized conditional cdf for $X_j$ will be defined as
+
+$$
+F_j(X_t^j)= \mathbb{P}[X_{t}^j \leq x_t^j| \mathbf{X}^{(-t)}=\mathbf{x}^{(-t)}]
+$$
+This process will yield an element pseudoresidual for each observation of each variable. So there will be $nT$ element pseudoresiduals. 
+
+## Generating Data
+
+In order to further investigate vector and element pseudoresiduals, randomly generated data was used in order to eliminate the possibility that the returns data wasn't causing the issue. This is to confirm that element pseudoresiduals are the extension of the previously described normal pseudoresiduals for univariate data, and that vector pseudoresiduals 
+
+2-Dimensional Gaussians were used in order to reduce the number of parameters to be fitted for each trial. The means were set to be close to zero with variances much greater than the means, which was observed in the returns data. For each model, 200 observations were generated, then a second random model was used as an initial condition for fitting a new model to the generated data. 
+For each fitted model, the `mvn.cdf_vector` and `mvn.cdf_element` functions were used. The inverse standard normal function `qnorm` was then used to get the two kinds of normal pseudoresiduals as described above. The mean and variance of the pseudoresiduals was then stored. Note, for the element normal pseudoresiduals, the values for each element were combined into a single vector and that was used for the variance calculation. (NOTE: If this is wrong to do, I can run the numbers again and separate the variances and means for the separate variables).
+
+
+# Results
+
+## Pseudoresiduals of Example Dataset
+
+To begin our examination of pseudoresiduals let us examine the pseudoresiduals of each return over time. 
+
+
+
+```{r, include = FALSE}
+pseudoresids_df <- resid_df %>%
+  select(Date,Apple_resids, Mic_resids, Intel_resids, Meta_resids,Vec_resids, day_num)%>%
+  rename( Apple=Apple_resids,  Microsoft= Mic_resids , Intel= Intel_resids , Meta = Meta_resids ) %>%
+  pivot_longer(c(Apple, Microsoft, Intel, Meta), names_to = 'Stock', values_to = 'Element_Residual')
+
+gooddf <- left_join(returns_df, pseudoresids_df) %>%
+  select(Date, Vec_resids, day_num, Stock, Return, Element_Residual)
+
+```
+```{r, echo=FALSE}
+
+ df <- gooddf %>%rename(Element = Element_Residual, Vector = Vec_resids)%>%
+  pivot_longer(c(Element, Vector), names_to = 'Res_Type', values_to = 'Residual')
+
+
+ggplot(df) +
+  geom_point(aes(x = day_num, y = abs(Return),  color = abs(Residual)))+
+  facet_grid(Stock~Res_Type)+
+  labs(
+    x = 'Day',
+    title = 'Full Dataset') + scale_colour_gradientn(colours = rainbow(4), name = NULL)
+  # )+scale_colour_gradient2(low = 'blue', high = 'red', mid = 'purple', midpoint = 3, name = NULL)
+
+
+```
+
+```{r, echo=FALSE}
+
+ df <- gooddf %>%rename(Element = Element_Residual, Vector = Vec_resids)%>%
+  pivot_longer(c(Element, Vector), names_to = 'Res_Type', values_to = 'Residual')%>%
+  filter(200 < day_num & day_num < 400)
+
+
+ggplot(df) +
+  geom_point(aes(x = day_num, y = abs(Return),  color = abs(Residual)))+
+  facet_grid(Stock~Res_Type)+
+  labs(
+    x = 'Day',
+    title = 'Day 200-400') + scale_colour_gradientn(colours = rainbow(4), name = NULL)
+  # )+scale_colour_gradient2(low = 'blue', high = 'red', mid = 'purple', midpoint = 3, name = NULL)
+
+
+```
+
+The means for each state, and thus the means for every conditional distribution, are close to zero. Returns that are far from zero are at the tails of the conditional distributions so are flagged as outliers. The element pseudoresiduals consistently show this property for the model fitted to the returns dataset.  
+For the element pseudoresiduals, we can see for all 4 stocks, for small magnitude of return values, the magnitude of the pseudoresidual seems to increase with the magnitude of the return, meaning that large magnitude returns are flagged as particularly unlikely by their element pseudoresiduals. This particularly apparent in the graph for Day 200-400. One can see the clear gradient of pseudoresidual magnitudes increasing with the increase of return magnitudes.
+
+```{r, echo=FALSE}
+
+ df <- gooddf %>%rename(Element = Element_Residual, Vector = Vec_resids)%>%
+  pivot_longer(c(Element, Vector), names_to = 'Res_Type', values_to = 'Residual')%>%
+  filter(600 < day_num & day_num < 800)
+
+
+ggplot(df) +
+  geom_point(aes(x = day_num, y = abs(Return),  color = abs(Residual)))+
+  facet_grid(Stock~Res_Type)+
+  labs(
+    x = 'Day',
+    title = 'Day 600-800') + scale_colour_gradientn(colours = rainbow(4), name = NULL)
+  # )+scale_colour_gradient2(low = 'blue', high = 'red', mid = 'purple', midpoint = 3, name = NULL)
+
+
+```
+
+
+When directly comparing the element and vector pseudoresiduals for a single stock, one can see that clear outliers, most notably the highest return  magnitude at around day 750 are marked differently. This is the lowest return that Meta has had in market history. For element pseudoresiduals, it has the largest magnitude of any other return. The vector pseudoresidual for that day doesn't flag it as that out of the ordinary. 
+
+
+```{r, include=FALSE}
+meta_df <- gooddf %>% filter( Stock == 'Meta')%>%
+  rename(Element = Element_Residual, Vector = Vec_resids)%>%
+  pivot_longer(c(Element, Vector), names_to = 'Res_Type', values_to = 'Residual')
+
+ggplot(meta_df) +
+  geom_point(aes(x = day_num, y = Return, color = abs(Residual)))+
+  scale_colour_gradient2(low = 'blue', high = 'red', mid = 'purple', midpoint = 1.5, name = NULL)+
+  facet_wrap(~Res_Type, ncol = 1)+
+  labs(x = 'Day Number', y = 'Return', title = 'Meta Returns Over Time with Normal Pseudoresiduals')
+
+```
+
+
+
+Let us further investigate the difference between vector and element pseudoresiduals by directly finding their relationship with returns. The behaviour from the returns over time figures appear to indicate that the farther away the return is from zero, the larger the magnitude of the pseudoresidual. It is equivalent to say that the pseudoresiduals and returns have an inverse relationship (i.e. as the return value increases, the value of the pseudoresidual decreases). Seen below, this is the case for both  vector and element pseudoresiduals.
+
+
+```{r, echo = FALSE}
+lm_df <- gooddf %>%
+  rename(Element = Element_Residual, Vector = Vec_resids)%>%
+  pivot_longer(c(Element, Vector), names_to = 'Res_Type', values_to = 'Residual')
+
+ggplot(lm_df,aes(x = Return, y = Residual, color = Res_Type))+
+  geom_point(alpha = 0.5)+
+  stat_smooth(method = 'lm', formula = 'y~x', fullrange = T, se=T, level = 0.99)+
+  facet_wrap(~Stock, nrow = 1)+
+  labs(y = 'Normal Pseudoresidual')
+
+```
+
+Clearly the negative relationship between pseudoresidual and return is stronger for element pseudoresiduals. The slope is steeper (more negative) for the element pseudoresiduals for all 4 stocks. In addition, the linear fit is better for the element pseudoresiduals. The r squared value for all stocks is higher for element then for vector pseudoresiduals.
+
+```{r, echo =FALSE}
+#Getting Linear Models for Element:
+elm_data <- lm_df %>%
+  filter(Res_Type == 'Element') %>%
+  group_by(Stock) %>%
+  summarise(`R Squared` = summary(lm(Residual ~ Return))$r.squared)
+#Getting Linear Models of Vector:
+vlm_data <- lm_df %>%
+  filter(Res_Type == 'Vector') %>%
+  group_by(Stock) %>%
+  summarise(`R Squared` = summary(lm(Residual ~ Return))$r.squared)
+
+kable(elm_data, caption = 'Element Pseudoresidual R Squared Values')
+kable(vlm_data, caption = 'Vector Pseudoresidual R Squared Values')
+
+```
+
+The purpose of this analysis is two fold: firstly, the element pseudoresiduals are acting as expected for outlier detection. Secondly, the vector pseudoresiduals are not acting as well in this capacity. The is to reinforce the point that the element pseudoresiduals are a natural extension of the previously described pseudoresiduals, and vector pseudoresiduals are something else entirely. 
+The vector pseudoresidual magnitudes, don't seem to have as clear of a relationship with the individual stock values. This is somewhat expected, since they are generated from multiple stocks, they aren't going to have as clear of a relationship with individual stock values. This is further discussed in Appendix C.
+
+
+The outlier detection for pseudoresiduals has been examined, let us now examine testing for goodness of fit. 
+
+As previously said, for univariate data, normal pseudoresiduals are expected to have a standard normal distribution for a well fitted model.
+
+
+First let us examine element pseudoresiduals.
+
+
+```{r, echo=FALSE}
+ggplot(pseudoresids_df) +
+  geom_density(aes(x = Element_Residual), fill = 'black')+
+  facet_wrap(~Stock)+
+  labs(x = 'Normal Pseudoresidual Value', y = 'Density', title = 'Densities for Element Pseudoresiduals by Stock')
+
+
+```
+```{r, echo=FALSE}
+elresidsstats <- gooddf %>%
+  group_by(Stock) %>%
+  summarise(Mean = mean(Element_Residual), Variance = var(Element_Residual))
+kable(elresidsstats, digits = 4)
+
+
+```
+
+Once again, element pseudoresiduals behave like the pseudoresiduals of their univariate counterparts. The means for all four stocks are close to 0, and the variances are close to 1. This is not to say that the model fitted to the returns data set is perfectly fitted. This is to demonstrate that element pseudoresiduals have the behaviour expected of normal pseudoresiduals. To contrast, let us now look at the density of the vector pseudoresiduals.
+SOME SORT OF HYPOTHESIS TEST HERE. GENERAL LIKELIHOOD TEST?
+
+```{r, echo =FALSE, fig.dim = c(4,3)}
+##Plotting Vector Pseudoresiduals
+p5 <- ggplot(resid_df) + 
+  geom_density(aes(x = Vec_resids), fill = 'black')+labs(
+    title = 'Vector Pseudoresidual Density',
+    x = 'Normal Pseudoresidual Value',
+    y = 'Density')
+
+p5
+vecresdstats <- gooddf %>%
+  summarise(Mean = mean(Vec_resids), Variance = var(Vec_resids))
+kable(vecresdstats, digits = 4)
+
+```
+
+For the vector pseudoresiduals once again there is unexpected behaviour for normal pseudoresiduals. The vector pseudoresiduals are clearly not standard normal distributed. (MAYBE SOME CLASSICAL STATS BS STUFF HERE) 
+
+So far, element pseudoresiduals have behaved as expected of normal pseudoresiduals. They identify outliers, and they are close to standard normal. Vector pseudoresiduals have consistently diverged from these behaviours. The question remains, is this a consequence of the returns dataset that has been used thus far. To eliminate this possibility, we will now work with simulated data.
+
+As mentioned above, for each trial for the results below, element and vector pseudoresiduals were calculated for a model fitted to randomly generated model from a different random model. The results are from the trials where the pseudoresidual functions were able to run properly.
+
+## Generated Data Results
+
+```{r, include=FALSE}
+var_df_improved <- gen_data_df %>%
+  mutate(trial_number = 1:dim(gen_data_df)[1]) %>%
+  rename(Vector = vec_var, Element = el_var)%>%
+  pivot_longer(c(Vector, Element), values_to = 'Variance', names_to = 'Type')%>%
+  select(trial_number, Type, Variance)
+mean_df_improved <- gen_data_df %>%
+  mutate(trial_number = 1:dim(gen_data_df)[1]) %>%
+  rename(Vector = vec_mean, Element = el_mean)%>%
+  pivot_longer(c(Vector, Element), values_to = 'Mean', names_to = 'Type')%>%
+  select(trial_number, Type, Mean)
+
+good_gen_df <- left_join(var_df_improved, mean_df_improved) 
+
+```
+```{r, echo=FALSE}
+m1 <-ggplot(good_gen_df)+
+  geom_histogram(aes(x = Mean), fill = 'black', binwidth = .07)+
+  facet_wrap(~Type)+
+  labs(y = 'Count', title = 'Generated Data Pseudoresidual Statistics')
+
+m2 <- ggplot(good_gen_df)+
+  geom_histogram(aes(x = Variance), fill = 'black', binwidth = .025)+
+  facet_wrap(~Type)+
+  labs(y = 'Count')
+
+multiplot(m1, m2)
+
+gen_dat_stats <- good_gen_df %>%
+  group_by(Type) %>%
+  summarise(`Avg Mean` = mean(Mean),
+            `Avg Variance` = mean(Variance),
+            `Med Mean` = median(Mean),
+            `Med Variance` = median(Variance)
+            )
+kable(gen_dat_stats, digits = 4)
+```
+
+The results dismiss any notions that is was the returns data set that was causing the behaviour of the vector pseudoresiduals. 
+The element pseudoresiduals behave the same as seen with the example returns dataset. The vast majority of the means and variances are in line with those of the standard normal.
+Unfortunately a clear pattern did not arise from the vector pseudoresiduals. The density of the means and variances of the vector pseudoresiduals for each trial are shown below. The only thing that can definitely be said is that they are not in line with the standard normal.
+
+
+```{r, echo = FALSE}
+vvar <- ggplot(gen_data_df) +
+  geom_density(aes(x = vec_var), fill = 'red')+
+  labs(
+    title = 'Variances of Vector Normal Pseudoresiduals',
+    x = 'Variance',
+    y = 'Density'
+  )
+vmean <- ggplot(gen_data_df) +
+  geom_density(aes(x = vec_mean), fill = 'blue')+
+  labs(
+    title = 'Means of Vector Normal Pseudoresiduals',
+    x = 'Mean',
+    y = 'Density'
+  )
+multiplot(vvar, vmean)
+```
+
+# Conclusion
+
+## Taking Stock of Vector Pseudoresiduals
+
+There is still a lot of investigation needed to bring more clarity into the uses of vector pseudoresiduals. They do not conform to the distributions previously described for pseudoresiduals of univariate models. If their expected distribution for a well fitting model could be described, then vector pseudoresiduals could act as another model diagnostic. 
+
+In order to perhaps identify an expected distribution for the vector pseudoresiduals there are many avenues of investigation that are clear at this point.
+Firstly, investigating the effect of the state dependent distribution. There may be a relationship between dimensionality of the state dependent distribution and the evaluations of the conditional distributions. The means of all of the vector pseudoresiduals are all less than that of the standard normal. The seems to imply that when the observation vectors are inputed into the conditional distributions, they are consistently less likely to occur. Simultaneously observing several values is always going to be less likely than observing a single return. Not only will it be less likely, the 'area' underneath the curve is also going to be smaller from the increase in dimensionality. Perhaps there is a way to scale the vector pseudoresidual values with some factor depending on the dimensionality of the data  to get them to an expected standard normal distribution. 
+In addition to dimensionality, there could be some relationship with the specific multivariate distribution impacting the distribution of the vector pseudoresiduals. Perhaps changing to different multivariate continuous distributions like a multivariate t-distribution will cause different behaviours to arise. However, for univariate distributions, the specific state dependent distribution didn't have to be taken into account when checking the pseudoresiduals.
+
+
+## Extensions
+
+More generally, the techniques outlined here are not at all restricted for financial modelling. Multivariate hidden markov models have a wide range of applications. Finding a use for vector pseudoresiduals has the potential to have an impact for any field for which these models are applicable.
+
+## Using Outlier Detection to Improve Models
+
+Outlier detection was used here to point out differences between the vector and element pseudoresiduals. However, there could be some interesting uses for vector pseudoresiduals in identifying entire vectors of outliers. 
+
+
+# Appendix
+
+## A: Results from Model Fitting
+
+For completeness sake, here is the resulting model that resulted from the model fitting described above. 
+``` {r, echo = FALSE}
+
+#TABLES
+collabs <- c('Apple', 'Microsoft', 'Meta', 'Intel')
+rowlabs <- c('State 1', 'State 2', 'State 3')
+mns <- big_mod$MEANS
+rownames(mns) <- rowlabs
+m_tab <- kable(big_mod$MEANS, caption = 'Means',  col.names = collabs, digits = 4)
+var_tab <- kable(big_mod$VARS, caption = 'Variances',  col.names = collabs, digits = 4)
+c1_tab <- kable(big_mod$CORR[,,1], caption = 'Correlation State 1',  col.names = collabs, digits = 4)
+c2_tab <- kable(big_mod$CORR[,,2], caption = 'Correlation State 2',  col.names = collabs, digits = 4)
+c3_tab <- kable(big_mod$CORR[,,3], caption = 'Correlation State 3',  col.names = collabs, digits = 4)
+tpm_tab <- kable(big_mod$TPM, caption = 'Transition Probability Matrix',, col.names = c('State 1','State 2','State 3'), digits = 5)
+m_tab
+var_tab
+c1_tab
+c2_tab
+c3_tab
+tpm_tab
+```
+Draw particular attention to correlation matrix of state 3, which has negative correlations. 
+
+## B: Formula for Conditional Distributions
+
+### Forward Probabilites:
+
+Forward probabilities are defined as follows: 
+$$
+\alpha_t = \delta P(\mathbf{x}_{1})\Gamma P(\mathbf{x}_{2})\Gamma P(\mathbf{x}_{3}) ...\Gamma P(\mathbf{x}_{t})
+$$
+Essentially each $\alpha_t$ a vector of the probabilities of observing $\mathbf{x}^{(t)}$ given the state at time $t$ is $1,..., m$. 
+
+
+$$
+\alpha_t(j) = \mathbb{P}(\mathbf{X}^{(t)}=\mathbf{x}^{(t)}|c_t =j)
+$$
+
+### Backward Probabilities
+
+Whereas forward probabilities are defined as the probability of observing all the observations up to and including time $t$, backward probabilities are the probabilities of observing all the observations after time $t$. The backward probability vector is defined as follows:
+
+$$
+\beta_t = \Gamma P(\mathbf{x}_{t+1})\Gamma P(\mathbf{x}_{t+2}) ...\Gamma P(\mathbf{x}_{T})\mathbb{1}
+$$
+$$
+\beta_T=\mathbb{1}
+$$
+These values will be used to define the conditional probabilities for each observation. The pdf for each observation is going to be the probability of an observation conditioned on the rest of the observations. To be explicit:
+$$
+\mathbb{P}[X_{t} = \mathbf{x}| \mathbf{X}^{(-t)}=\mathbf{x}^{(-t)}]=\mathbb{P}[\frac{X_t = \mathbf{x}, \mathbf{X}^{(-t)}=\mathbf{x}^{(-t)}}{\mathbf{X}^{(-t)}=\mathbf{x}^{(-t)}}]
+$$
+The numerator is just the likelihood as described above, just with the observation at time $t$ replaced with the generic observation vector $\mathbf{x}$. The above probability can be calculated using the following values:
+$$
+\mathbb{P}(X_t = \mathbf{x}| \mathbf{X}^{(-t)}=\mathbf{x}^{(-t)})=\frac{\delta P(\mathbf{x}_{1})\Gamma P(\mathbf{x}_{2})...\Gamma P(\mathbf{x}_{t-1})\Gamma P(\mathbf{x})  ...\Gamma P(\mathbf{x}_{T}) \mathbf{1}'}{\delta P(\mathbf{x}_{1})\Gamma P(\mathbf{x}_{2})\Gamma P(\mathbf{x}_{3}) ...\Gamma P(\mathbf{x}_{t-1})\Gamma P(\mathbf{x}_{t+1}) ...\Gamma P(\mathbf{x}_{T}) \mathbf{1}'}
+$$
+This can be simplified using our notation from above for forward and backward probabilities to then get the pdf for an observation:
+$$
+\mathbb{P}(\mathbf{X}_{t}=\mathbf{x}|\mathbf{X}^{(-t)}=\mathbf{x}^{(-t)}) = \frac{\alpha_{t-1} \Gamma P(\mathbf{x}) \beta_t'}{\alpha_{t-1}\Gamma\beta_t'}
+$$
+From here, getting the conditional cumulative distribution function is trivial, one need only calculate the cdf for $P(\mathbf{x})$ instead of the pdf (Essentially `pmvnorm` instead of `dmvnorm`). Here $\mathbf{P}(\mathbf{x})$ indicates the use of the cdf instead of the pdf. 
+$$
+\mathbb{P}(\mathbf{X}\leq\mathbf{x}|\mathbf{X}^{(-t)}=\mathbf{x}^{(-t)}) = \frac{\alpha_{t-1} \Gamma \mathbf{P}(\mathbf{x}) \beta_t'}{\alpha_{t-1}\Gamma\beta_t'}
+$$
+
+## C: Summary Statistics for Returns
+
+Perhaps there is some summary statistic for multiple stock log returns that vector pseudoresiduals would be better suited. Below is a graph of the element pseudoresiduals for each stock and the vector pseudoresiuduals as a color scale for the average returns of the 4 stocks at each day over time. 
+
+```{r, echo=FALSE}
+mean_return_df <- resid_df %>%
+  rename(ap = Apple,mic = Microsoft, int = Intel, met = Meta)%>%
+  mutate(mean_return = rowSums(abs(resid_df[,2:5]))/4) %>%
+  select(Date,Apple_resids, Mic_resids, Intel_resids, Meta_resids,Vec_resids, day_num,mean_return)%>%
+  rename( Apple=Apple_resids,  Microsoft= Mic_resids , Intel= Intel_resids , Meta = Meta_resids, Vector =Vec_resids ) %>%
+  pivot_longer(c(Apple, Microsoft, Intel, Meta, Vector), names_to = 'Res_Type', values_to = 'Residual')%>%
+  filter(200 < day_num & day_num < 400)
+ggplot(mean_return_df, aes(x = day_num, y = abs(mean_return), color = abs(Residual)))+
+  geom_point()+
+  facet_wrap(~Res_Type, ncol = 1) + labs(
+    x = 'Day',y = 'Mean Magnitude of Stocks',
+    title = 'Day 200-400') + scale_colour_gradientn(colours = rainbow(4), name = NULL)
+  
+
+```
+It does not seem like Mean Magnitude is the correct summary statistic for vector pseudoresiduals. This needs more investigation.
+
+## Code
+

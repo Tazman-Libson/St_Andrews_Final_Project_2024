@@ -1,0 +1,764 @@
+##Visualization
+
+
+library(tidyverse)
+library(knitr)
+
+dat_var <- var(ret_matrix)
+cor(ret_matrix)
+kable(cor(ret_matrix),digits = 4, col.names = c('Apple', 'Microsoft', 'Intel', 'Meta'),  format = 'latex')
+
+
+
+ret_plot_df <- returns_df %>%
+  filter(Stock == 'Apple' | Stock =='Microsoft') %>%
+  filter(day_num < 100)
+
+
+ggplot(ret_plot_df) +
+  geom_line(aes(x = day_num, y =  Return, color = Stock))
+
+unif_resids_element <- mvn.cdf_element(ret_matrix, big_mod)
+unif_resids_vector <- mvn.cdf_vector(ret_matrix, big_mod)
+
+unif_df <- data.frame(
+  Apple = unif_resids_element[,1],
+  Microsoft = unif_resids_element[,2],
+  Intel = unif_resids_element[,3],
+  Meta = unif_resids_element[,4]
+)
+demonstration_df_pdf <- data.frame(
+  X = seq(0, 3, length.out = 1000),
+  Y = dgamma(seq(0, 3, length.out = 1000), 2, 3)
+)
+tsample <- rgamma(10000, 2,3)
+demonstration_df_resids <- data.frame(
+  X = tsample,
+  Y = pgamma(tsample,2, 3),
+  Z = qnorm( pgamma(tsample,2, 3))
+)
+numberthingy = 14
+dem_pdfplot <- ggplot(demonstration_df_pdf, aes(x = X, y = Y))+
+  geom_area()+
+  geom_vline(xintercept = tsample[numberthingy], color = 'red')+
+  labs(
+    y = 'Probability',
+    x = 'Observation Value',
+    title = 'Probability Density Function'
+  )
+dem_unifresidplot <- ggplot(demonstration_df_resids, aes(x = Y))+
+  geom_histogram(binwidth = .05, color = 'black', fill = 'black')+
+  geom_vline(xintercept = demonstration_df_resids$Y[numberthingy], color = 'red')+
+  labs(x = 'Cdf Value', title = 'Uniform Pseudoresidual')
+dem_normresidplot <- ggplot(demonstration_df_resids, aes(x = Z))+
+  geom_density(fill = 'black')+
+  geom_vline(xintercept = demonstration_df_resids$Z[numberthingy], color = 'red')+
+  labs(x = 'qnorm(cdf value)', title = 'Normal Pseudoresidual')
+multiplot(dem_pdfplot, dem_unifresidplot, dem_normresidplot)
+
+
+
+returns_df <-resid_df %>% pivot_longer(c(Apple, Microsoft, Intel, Meta), names_to = 'Stock', values_to = 'Return')
+
+
+
+pseudoresids_df <- resid_df %>%
+  select(Date,Apple_resids, Mic_resids, Intel_resids, Meta_resids,Vec_resids, day_num)%>%
+  rename( Apple=Apple_resids,  Microsoft= Mic_resids , Intel= Intel_resids , Meta = Meta_resids ) %>%
+  pivot_longer(c(Apple, Microsoft, Intel, Meta), names_to = 'Stock', values_to = 'Element_Residual')
+
+gooddf <- left_join(returns_df, pseudoresids_df) %>%
+  select(Date, Vec_resids, day_num, Stock, Return, Element_Residual)
+
+df <- gooddf %>%
+  filter(day_num > 750)%>%
+  filter(day_num < 800)
+
+ggplot(df) +
+  geom_point(aes(x = day_num, y = Return,  color = abs(Element_Residual)))+
+  facet_wrap(~Stock)+
+  scale_colour_gradientn(colours=rainbow(4),name =NULL)+
+  labs(
+    x = 'Day',
+    title = 'Element'
+  )
+ggplot(df) +
+  geom_point(aes(x = day_num, y = Return,  color = abs(Vec_resids)))+
+  facet_wrap(~Stock)+
+  scale_colour_gradientn(colours=rainbow(4),name =NULL)+
+  labs(
+    x = 'Day',
+    title = 'Vector'
+  )
+
+df <- gooddf %>% filter( Stock == 'Meta')%>%
+  filter(day_num > 500)%>%
+  filter(day_num < 1000)
+
+plot1 <- ggplot(df, aes(x = day_num, y = Return,  color = abs(Element_Residual))) +
+  geom_point()+
+  scale_colour_gradientn(colours=rainbow(4),name =NULL)+
+  labs(
+    x = 'Day',
+    title = 'Element'
+  )
+plot2 <- ggplot(df, aes(x = day_num, y = Return,  color = abs(Vec_resids))) +
+  geom_point()+
+  scale_colour_gradientn(colours=rainbow(4),name =NULL)+
+  labs(
+    x = 'Day',
+    title = 'Vector'
+  )
+multiplot(plot1, plot2, cols = 1) 
+
+
+#Plotting 2D- Multivariate Conditional CDF
+#Reduce Model
+big2dmodel <- list(
+  MEANS = big_mod$MEANS[,3:4],
+  CORR = big_mod$CORR[3:4,3:4,],
+  VARS = big_mod$VARS[,3:4],
+  TPM = big_mod$TPM,
+  ID = big_mod$ID
+)
+
+cond_dist_mat_vec2d <- function(obs_matrix, N = 10000){
+  n <- dim(obs_matrix)[2]
+  mat <- matrix(nrow = N**2, ncol = n)
+  seq1 <-seq(min(-5), max(obs_matrix[,1]), length.out = N)
+  seq2 <-seq(min(obs_matrix[,2]), max(obs_matrix[,2]), length.out = N)
+  for(i in 1:N){
+    mat[(N*(i-1)+1):(N*i),] <- matrix(c(rep(seq1[i], N), seq2), nrow = N, ncol =2)
+  }
+  return(mat)
+}
+
+mvn.pdf_vector <- function(x,mod, obsmat, index){
+  lenx         <- dim(x)[1]
+  m         <- dim(mod$TPM)[1]
+  dxc       <- matrix(NA,nrow=lenx,ncol=1)
+  Px        <- matrix(NA,nrow=lenx,ncol=m)
+  for (j in 1:lenx){ Px[j,] <- diag(mvn.p_matrix(mod, x[j,]))}
+  la        <- mvn.lforward(obsmat,mod)
+  lb        <- mvn.lbackward(obsmat,mod)
+  la        <- rbind(log(mod$ID),la)
+  lafact    <- apply(la,1,max)
+  lbfact    <- apply(lb,1,max)
+  for (i in 1:lenx)
+  {
+    foo      <- (exp(la[index,]-lafact[index])%*%mod$TPM)*exp(lb[index,]-lbfact[index])
+    foo      <- foo/sum(foo)
+    #if(i ==1){print(foo)}
+    dxc[i]  <- sum(Px[i,]%*%t(foo))
+  }
+  return(dxc)
+}
+funny_matrix <- matrix(c(-5,5,-5,5), nrow = 2, byrow = F)
+
+cond_mat2d <-cond_dist_mat_vec2d(funny_matrix, 100)
+
+
+
+cdfvals1 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,3:4], 500)
+cdfvals2 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 10)
+cdfvals3 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 225)
+cdfvals4 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 251)
+
+cdfvals1 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,3:4], 500)
+cdfvals2 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 499)
+cdfvals3 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 501)
+cdfvals4 <- mvn.pdf_vector(cond_mat2d, big2dmodel, ret_matrix[,1:2], 502)
+cdf_df <- data.frame(
+  Intel_Return = cond_mat2d[,1],
+  Meta_Return = cond_mat2d[,2],
+  Feb_5_2022 = cdfvals2,
+  Feb_4_2022 = cdfvals1,
+  Feb_3_2022 = cdfvals3,
+  Feb_2_2022 = cdfvals4
+)
+ggplot(cdf_df, aes(x = Intel_Return, y = Meta_Return, z = cdfvals4))+
+  geom_contour_filled()+
+  labs(
+    title = 'Conditional PDF for Intel and Meta',
+    x = 'Intel Return',
+    y = 'Meta Return'
+  )
+
+
+big_cdf_df <- cdf_df %>%
+  pivot_longer(c(Feb_2_2022, Feb_3_2022, Feb_4_2022, Feb_5_2022), values_to = 'pdf_eval', names_to = 'Date')
+
+ggplot(big_cdf_df, aes(x = Intel_Return, y = Meta_Return, z = pdf_eval))+
+  geom_contour_filled()+
+  facet_wrap(~Date)+
+  labs(
+    title = 'Conditional PDFs on Different Days',
+    x = 'Intel Return',
+    y = 'Meta Return'
+  )
+
+cont1 <- ggplot(cdf_df, aes(x = Intel_Return, y = Meta_Return, z = cdf))+
+  geom_contour_filled()
+
+cont2 <- ggplot(cdf_df, aes(x = Intel_Return, y = Meta_Return, z = cdf))+
+  geom_contour_filled()
+multiplot(cont1, cont2, cols = 1)
+
+
+
+
+
+
+library(mvtnorm)
+mvn.pdf_vector <- function(x,mod, obsmat, index){
+  lenx         <- dim(x)[1]
+  lenobs <- dim(obsmat)[1]
+  m         <- dim(mod$TPM)[1]
+  n <- dim(mod$CORR)[2]
+  dxc       <- matrix(NA,nrow=lenx,ncol=n)
+  Px        <- array(NA,dim = c(m, n, lenx))
+  for (j in 1:lenx){ Px[,,j] <- mvn.pdf_mat( x[j,], mod)}
+  la        <- mvn.lforward(obsmat,mod)
+  lb        <- mvn.lbackward(obsmat,mod)
+  la        <- rbind(log(mod$ID),la)
+  lafact    <- apply(la,1,max)
+  lbfact    <- apply(lb,1,max)
+  for (i in 1:lenx)
+  {
+    foo      <- (exp(la[index,]-lafact[index])%*%mod$TPM)*exp(lb[index,]-lbfact[index])
+    foo      <- foo/sum(foo)
+    for(j in 1:n){
+      dxc[i,j]  <- sum(Px[,j,i]%*%t(foo))
+    }
+  }
+  return(dxc)
+}
+
+
+
+
+
+
+
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+  
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+
+
+
+
+#Model Fitting Results:
+
+
+
+##Demonstrative Graphs:
+#Showing Conditional Distribution
+mvn.pdf_mat <- function(X, mod){
+  m <- dim(mod$TPM)[1]
+  n <- dim(mod$CORR)[2]
+  output <- matrix(nrow = m, ncol = n)
+  prob_fun <- function(i){
+    prob_sub_fun <- function(m){
+      vars <- mod$VARS[,i]
+      means <- mod$MEANS[,i]
+      return(dnorm(X[i], mean = means[m], sd = vars[m]))
+    }
+    probs <- sapply(1:m,  FUN =prob_sub_fun)
+  }
+  probs <- sapply(1:n,  FUN =prob_fun, simplify = "matrix")
+  return(probs)
+}
+
+
+mvn.pdf_element <- function(x,mod, obsmat, index){
+  lenx         <- dim(x)[1]
+  lenobs <- dim(obsmat)[1]
+  m         <- dim(mod$TPM)[1]
+  n <- dim(mod$CORR)[2]
+  dxc       <- matrix(NA,nrow=lenx,ncol=n)
+  Px        <- array(NA,dim = c(m, n, lenx))
+  for (j in 1:lenx){ Px[,,j] <- mvn.pdf_mat( x[j,], mod)}
+  la        <- mvn.lforward(obsmat,mod)
+  lb        <- mvn.lbackward(obsmat,mod)
+  la        <- rbind(log(mod$ID),la)
+  lafact    <- apply(la,1,max)
+  lbfact    <- apply(lb,1,max)
+  for (i in 1:lenx)
+  {
+    foo      <- (exp(la[index,]-lafact[index])%*%mod$TPM)*exp(lb[index,]-lbfact[index])
+    foo      <- foo/sum(foo)
+    for(j in 1:n){
+      dxc[i,j]  <- sum(Px[,j,i]%*%t(foo))
+    }
+  }
+  return(dxc)
+}
+
+
+cond_dist_mat <- function(obs_matrix, N = 10000){
+  n <- dim(obs_matrix)[2]
+  mat <- matrix(nrow = N, ncol = n)
+  for(i in 1:n){
+    mat[,i] <- seq(min(obs_matrix[,i]), max(obs_matrix[,i]), length.out = N)
+  }
+  return(mat)
+}
+
+important_index = 10
+big_mod <- readRDS('big_mod3state.Rdata')
+cond_mat <- cond_dist_mat(ret_matrix)
+pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+
+combined_mat <- cbind(cond_mat, pdf_mat)
+pdf_df <- data.frame(
+  apval = combined_mat[,1],
+  micval = combined_mat[,2],
+  metval = combined_mat[,3],
+  intval = combined_mat[,4],
+  appdf = combined_mat[,5],
+  micpdf = combined_mat[,6],
+  metpdf = combined_mat[,7],
+  intpdf = combined_mat[,8]
+)
+pd1 <- ggplot(pdf_df)+
+  geom_area(aes(x= apval, y = appdf), fill = 'red')+
+  geom_vline(xintercept = ret_matrix[important_index,1])+
+  labs(
+    y = 'Pdf Evaluation',
+    x = 'Apple Return Value'
+  )
+pd2 <- ggplot(pdf_df)+
+  geom_area(aes(x= micval, y = micpdf), fill = 'blue')+
+  geom_vline(xintercept = ret_matrix[important_index,2])+
+  labs(
+    y = 'Pdf Evaluation',
+    x = 'Microsoft Return Value'
+  )
+pd3 <- ggplot(pdf_df)+
+  geom_area(aes(x= metval, y = metpdf), fill = 'green')+
+  geom_vline(xintercept = ret_matrix[important_index,3])+
+  labs(
+    y = 'Pdf Evaluation',
+    x = 'Meta Return Value'
+  )
+pd4 <- ggplot(pdf_df)+
+  geom_area(aes(x= metval, y = intpdf), fill = 'yellow')+
+  geom_vline(xintercept = ret_matrix[important_index,4])+
+  labs(
+    y = 'Pdf Evaluation',
+    x = 'Intel Return Value'
+  )
+
+important_index = 251
+
+cond_mat <- cond_dist_mat(ret_matrix)
+pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+
+combined_mat <- cbind(cond_mat, pdf_mat)
+pdf_df <- data.frame(
+  apval = combined_mat[,1],
+  micval = combined_mat[,2],
+  metval = combined_mat[,3],
+  intval = combined_mat[,4],
+  appdf = combined_mat[,5],
+  micpdf = combined_mat[,6],
+  metpdf = combined_mat[,7],
+  intpdf = combined_mat[,8]
+)
+pd1 <- ggplot(pdf_df)+
+  geom_area(aes(x= apval, y = appdf), fill = 'red')+
+  geom_vline(xintercept = resid_df[[important_index,2]])+
+  labs(
+    y = 'Pdf Evaluation',
+    x = 'Apple Return Value'
+  )
+pd2 <- ggplot(pdf_df)+
+  geom_area(aes(x= micval, y = micpdf), fill = 'blue')+
+  geom_vline(xintercept = resid_df[[important_index,3]])+
+  labs(
+    y = 'Pdf Evaluation',
+    x = 'Microsoft Return Value'
+  )
+pd3 <- ggplot(pdf_df)+
+  geom_area(aes(x= metval, y = metpdf), fill = 'green')+
+  geom_vline(xintercept = resid_df[[important_index,4]])+
+  labs(
+    y = 'Pdf Evaluation',
+    x = 'Meta Return Value'
+  )
+pd4 <- ggplot(pdf_df)+
+  geom_area(aes(x= metval, y = intpdf), fill = 'yellow')+
+  geom_vline(xintercept = resid_df[[important_index,5]])+
+  labs(
+    y = 'Pdf Evaluation',
+    x = 'Intel Return Value'
+  )
+
+
+multiplot(pd1, pd2, pd3, pd4, cols = 2)
+
+
+pd1
+
+
+
+
+multiplot(pd1, pd2, pd3, pd4, cols = 2)
+
+
+
+
+important_index = 10
+pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+
+combined_mat <- cbind(cond_mat, pdf_mat)
+pdf_df <- data.frame(
+  apval = combined_mat[,1],
+  micval = combined_mat[,2],
+  metval = combined_mat[,3],
+  intval = combined_mat[,4],
+  appdf = combined_mat[,5],
+  micpdf = combined_mat[,6],
+  metpdf = combined_mat[,7],
+  intpdf = combined_mat[,8]
+)
+
+cd1 <- ggplot(pdf_df)+
+  geom_area(aes(x= apval, y = appdf), fill = 'red')+
+  geom_vline(xintercept = ret_matrix[important_index,1])+
+  labs(
+    title = paste('Day', as.character(important_index)),
+    y = 'Pdf Evaluation',
+    x = NULL
+  )
+important_index <- important_index +100
+pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+
+combined_mat <- cbind(cond_mat, pdf_mat)
+pdf_df <- data.frame(
+  apval = combined_mat[,1],
+  micval = combined_mat[,2],
+  metval = combined_mat[,3],
+  intval = combined_mat[,4],
+  appdf = combined_mat[,5],
+  micpdf = combined_mat[,6],
+  metpdf = combined_mat[,7],
+  intpdf = combined_mat[,8]
+)
+cd2 <- ggplot(pdf_df)+
+  geom_area(aes(x= apval, y = appdf), fill = 'red')+
+  geom_vline(xintercept = ret_matrix[important_index,1])+
+  labs(
+    title = paste('Day', as.character(important_index)),
+    y = 'Pdf Evaluation',
+    x = NULL
+  )
+important_index <- important_index +100
+pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+
+combined_mat <- cbind(cond_mat, pdf_mat)
+pdf_df <- data.frame(
+  apval = combined_mat[,1],
+  micval = combined_mat[,2],
+  metval = combined_mat[,3],
+  intval = combined_mat[,4],
+  appdf = combined_mat[,5],
+  micpdf = combined_mat[,6],
+  metpdf = combined_mat[,7],
+  intpdf = combined_mat[,8]
+)
+cd3 <- ggplot(pdf_df)+
+  geom_area(aes(x= apval, y = appdf), fill = 'red')+
+  geom_vline(xintercept = ret_matrix[important_index,1])+
+  labs(
+    title = paste('Day', as.character(important_index)),
+    y = 'Pdf Evaluation',
+    x = NULL
+  )
+important_index <- important_index +100
+pdf_mat <- mvn.pdf_element(cond_mat, big_mod, ret_matrix, important_index)
+
+combined_mat <- cbind(cond_mat, pdf_mat)
+pdf_df <- data.frame(
+  apval = combined_mat[,1],
+  micval = combined_mat[,2],
+  metval = combined_mat[,3],
+  intval = combined_mat[,4],
+  appdf = combined_mat[,5],
+  micpdf = combined_mat[,6],
+  metpdf = combined_mat[,7],
+  intpdf = combined_mat[,8]
+)
+cd4 <- ggplot(pdf_df)+
+  geom_area(aes(x= apval, y = appdf), fill = 'red')+
+  geom_vline(xintercept = ret_matrix[important_index,1])+
+  labs(
+    title = paste('Day', as.character(important_index)),
+    y = 'Pdf Evaluation',
+    x = 'Apple Return Value'
+  )
+multiplot(cd1, cd2, cd3, cols = 3)
+
+
+
+
+seq(-14, 14, length.out = 10000)
+#Graphing the different states for a single stock
+apmax <- max(ret_matrix[,1]) 
+apmin <- min(ret_matrix[,1])
+get_single_stock_info <- function(mod, n_num){
+  means <- mod$MEANS[,n_num]
+  vars <- mod$VARS[, n_num]
+  return(list(
+    MEANS = means,
+    VARS = vars))
+}
+
+applerange <- seq(-14, 14, length.out = 10000)
+apple_pdf_df <- data.frame(
+  ret_val = applerange
+)
+single_stock_pdf_given_state <- function(xval, m, n, mod){
+  pars <- get_single_stock_info(mod, n)
+  return(
+    dnorm(xval, mean = pars$MEANS[m], sd = pars$VARS[m])
+  )
+}
+
+
+
+
+apple_pdf_df <- apple_pdf_df %>%
+  mutate(state1 = single_stock_pdf_given_state(ret_val, m = 1, n = 1, mod= big_mod_nlm)) %>%
+  mutate(state2 = single_stock_pdf_given_state(ret_val, m = 2, n = 1, mod= big_mod_nlm)) %>%
+  mutate(state3 = single_stock_pdf_given_state(ret_val, m = 3, n = 1, mod= big_mod_nlm))
+
+apple_uni_marge_pdf <- ggplot(apple_pdf_df)+
+  geom_line(aes(x = ret_val, y = state1,color = 'red'))+
+  geom_line(aes(x = ret_val, y = state2, color = 'blue'))+
+  geom_line(aes(x = ret_val, y = state3, color = 'green'))+
+  labs(
+    title = 'Marinalized pdfs for Apple Returns',
+    x = 'Return Value',
+    y = 'dnorm(x)',
+    aes()
+  )+scale_color_discrete(name = 'State', 
+                       labels  = c(1, 2, 3))
+
+
+
+#Pseudoresiduals:
+el_resids <- qnorm(mvn.cdf_element(ret_matrix, big_mod))
+vec_resids <- qnorm(mvn.cdf_vector(ret_matrix, big_mod))
+resid_df <- example_returns %>%
+  mutate(Apple_resids = el_resids[,1]) %>%
+  mutate(Mic_resids = el_resids[,2]) %>%
+  mutate(Meta_resids = el_resids[,3]) %>%
+  mutate(Intel_resids = el_resids[,4]) %>%
+  mutate(Vec_resids = vec_resids) %>%
+  mutate(day_num = rev(1:dim(resid_df)[1]))
+
+p1 <-ggplot(resid_df) + 
+  geom_density(aes(x = Apple_resids ),fill = 'red')+
+  labs(
+    title = 'Apple',
+    x = 'Normal Pseudoresidual Value',
+    y = 'Density')
+
+p2 <- ggplot(resid_df)+
+  geom_density(aes(x = Mic_resids), fill = 'blue')+
+  labs(
+    title = 'Microsoft',
+    x = 'Normal Pseudoresidual Value',
+    y = 'Density')
+
+p3 <- ggplot(resid_df)+
+  geom_density(aes(x = Meta_resids), fill = 'green')+
+  labs(
+    title = 'Meta',
+    x = 'Normal Pseudoresidual Value',
+    y = NULL)
+
+p4 <- ggplot(resid_df) + 
+  geom_density(aes(x = Intel_resids), fill = 'yellow')+
+  labs(
+    title = 'Intel',
+    x = 'Normal Pseudoresidual Value',
+    y = NULL)
+
+multiplot(p1,p2, p3, p4, cols = 2)
+
+elresidmeans <- matrix(
+  c(
+    mean(resid_df$Apple_resids),
+    mean(resid_df$Mic_resids),
+    mean(resid_df$Meta_resids),
+    mean(resid_df$Intel_resids)))
+
+elresidvars <- matrix(
+  c(
+    var(resid_df$Apple_resids),
+    var(resid_df$Mic_resids),
+    var(resid_df$Meta_resids),
+    var(resid_df$Intel_resids)))
+
+##Plotting Vector Pseudoresiduals
+p5 <- ggplot(resid_df) + 
+  geom_density(aes(x = Vec_resids), fill = 'black')+labs(
+    title = 'Vector Pseudoresidual Density',
+    x = 'Normal Pseudoresidual Value',
+    y = 'Density')
+
+p5
+#Plotting Pseudoresiduals Against Time
+day <- 500
+g1 <- ggplot(resid_df[1:day,]) + 
+  geom_point(aes(x = day_num, y = Apple, color = abs(Apple_resids)))+ 
+  scale_colour_gradientn(colours=rainbow(4),name = NULL)+
+  labs(
+    title = 'Returns with Element Pseudoresiduals',
+    x = NULL  )
+
+g2 <- ggplot(resid_df[1:day,]) + 
+  geom_point(aes(x = day_num, y = Microsoft, color = abs(Mic_resids)))+ 
+  scale_colour_gradientn(colours=rainbow(4),name =NULL)+
+  labs(
+    x = NULL
+  )
+g3 <- ggplot(resid_df[1:day,]) + 
+  geom_point(aes(x = day_num, y = Meta, color = abs(Meta_resids)))+ 
+  scale_colour_gradientn(colours=rainbow(4),name =NULL)+
+  labs(
+    x = NULL
+  )
+
+g4 <- ggplot(resid_df[1:day,]) + 
+  geom_point(aes(x = day_num, y = Intel, color = abs(Intel_resids)))+ 
+  scale_colour_gradientn(colours=rainbow(4),name = NULL)+
+  labs(
+    x = 'Day Number'
+  )
+multiplot(g1, g2, g3, g4)
+
+
+
+g5 <- ggplot(resid_df[1:day,]) + 
+  geom_point(aes(x = day_num, y = Apple, color = abs(Vec_resids)))+ 
+  scale_colour_gradientn(colours=rainbow(4),name = 'Pseudoresidual')+
+  labs(
+    title = 'Returns with Vector Pseudoresiduals'
+  )
+g6 <- ggplot(resid_df[1:day,]) + 
+  geom_point(aes(x = day_num, y = Microsoft, color = abs(Vec_resids)))+ 
+  scale_colour_gradientn(colours=rainbow(4),name = 'Pseudoresidual')+
+  labs(
+    title = NULL
+  )
+g7 <- ggplot(resid_df[1:day,]) + 
+  geom_point(aes(x = day_num, y = Meta, color = abs(Vec_resids)))+ 
+  scale_colour_gradientn(colours=rainbow(4),name = 'Pseudoresidual')+
+  labs(
+    title = NULL
+  )
+g8 <- ggplot(resid_df[1:day,]) + 
+  geom_point(aes(x = day_num, y = Intel, color = abs(Vec_resids)))+ 
+  scale_colour_gradientn(colours=rainbow(4),name = 'Pseudoresidual')+
+  labs(
+    title = NULL
+  )
+
+
+multiplot(g5, g6, g7, g8, cols =1)
+
+
+
+#Apple_pdfs:
+
+
+#Visualizing Results from Generated Data:
+write.csv(resid_means_and_vars[1:200,], file='Gen_Data')
+
+
+gen_data_df <- data.frame(
+  'vec_var' = resid_means_and_vars[,1],
+  'vec_mean' =  resid_means_and_vars[,2],
+  'el_var' =  resid_means_and_vars[,3],
+  'el_mean' =  resid_means_and_vars[,4],
+ ' code' =  resid_means_and_vars[,5],
+ ' iterations' =  resid_means_and_vars[,6]
+)
+gen_data_df <- gen_data_df[1:200, ]
+
+ggplot(gen_data_df) +
+  geom_density(aes(x = vec_var), fill = 'red')+
+  labs(
+    title = 'Variances of Vector Normal Pseudoresiduals',
+    x = 'Variance',
+    y = 'Density'
+  )
+
+ggplot(gen_data_df) +
+  geom_density(aes(x = vec_mean), fill = 'blue')+
+  labs(
+    title = 'Means of Vector Normal Pseudoresiduals',
+    x = 'Mean',
+    y = 'Density'
+  )
+
+ggplot(gen_data_df) +
+  geom_density(aes(x = el_var), fill = 'green')+
+  labs(
+    title = 'Variances of Element Normal Pseudoresiduals',
+    x = 'Variance',
+    y = 'Density'
+  )
+
+ggplot(gen_data_df) +
+  geom_density(aes(x = el_mean), fill = 'yellow')+
+  labs(
+    title = 'Means of Element Normal Pseudoresiduals',
+    x = 'Mean',
+    y = 'Density'
+  )
+
+
+
+
+
+
+
+
+

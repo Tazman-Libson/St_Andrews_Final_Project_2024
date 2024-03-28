@@ -1,0 +1,4 @@
+"0","ggplot(pseudoresids_df) +"
+"0","  geom_density(aes(x = Element_Residual), fill = 'black')+"
+"0","  facet_wrap(~Stock)+"
+"0","  labs(x = 'Normal Pseudoresidual Value', y = 'Density', title = 'Densities for Element Pseudoresiduals by Stock')"

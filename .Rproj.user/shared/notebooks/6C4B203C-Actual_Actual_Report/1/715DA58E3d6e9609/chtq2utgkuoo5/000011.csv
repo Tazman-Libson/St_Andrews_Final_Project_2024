@@ -1,0 +1,3 @@
+"0","vecresdstats <- gooddf %>%"
+"0","  summarise(Mean = mean(Vec_resids), Variance = var(Vec_resids))"
+"0","kable(vecresdstats, digits = 4, caption = 'Summary Statistics for Vector Pseudoresiduals')"
