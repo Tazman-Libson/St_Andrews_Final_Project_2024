@@ -1,0 +1,137 @@
+#Minus Log Likelihood Function 
+#X: matrix with each column being a separate variable, each row an observation 
+#of each variable at the same time (t x n), t = # of times observed, n = # of variables for multivariate norm
+library(abind)
+
+mvn.HMM_mllk <- function(parvec, X, m, n, stationary, print = F){
+  mod <- mvn.w2n(parvec, m, n, stationary)
+  if(!stationary){
+    mod$ID <- sapply(mod$ID, FUN = threshold)
+  }
+  tpm <- mod$TPM
+  t <- dim(X)[1] # number of observations
+  phi <- mod$ID * diag(mvn.p_matrix(mod, X[1,]))
+  l <- log(sum(phi)) #log likelihood
+  phi <- phi/sum(phi)
+  for(i in 2:t){
+    v <- phi %*% tpm * diag(mvn.p_matrix(mod, X[i,]))
+    u <- sum(v)
+    l <- l + log(u)
+    phi <- v/u #rescaled vector of forward probabilities
+  }
+  if(print){
+    print(-l)
+    print(mod)}
+  return(-l)
+}
+
+
+
+mvn.HMM_ml_mod_fit_optim <- function(mod, data, stationary = T, print = F){
+  n <- dim(mod$CORR )[2]# number of variables for multivariate norm
+  m <- dim(mod$TPM)[1] # number of states
+  parvec <- mvn.n2w(mod, stationary)
+  fit <- optim(parvec, fn = mvn.HMM_mllk, X = data, m = m, n = n, stationary = stationary, print = print, control = list(maxit = 50000), method = 'BFGS')
+  mod <- mvn.w2n(fit$par, m = m, n = n, stationary = stationary)
+  mod$minimum <- fit$value
+  mod$code <- fit$convergence
+  mod$iterations <- fit$counts[[1]]
+  return(mod)
+}
+
+mvn.HMM_ml_mod_fit_nlm <- function(mod, data, stationary = T, print = F, maxit =100){
+  n <- dim(mod$CORR)[2]# number of variables for multivariate norm
+  m <- dim(mod$TPM)[1] # number of states
+  parvec <- mvn.n2w(mod, stationary)
+  fit <- nlm(mvn.HMM_mllk, parvec, X = data, m = m, n = n, stationary = stationary, print = print, iterlim = maxit)
+  model <- mvn.w2n(fit$estimate, m = m, n = n, stationary = stationary)
+  print(model)
+  model$minimum <- fit$minimum
+  model$code <- fit$code
+  model$iterations <- fit$iterations
+  print(model)
+  return(model)
+}
+
+
+# #Testing:
+# ret_matrix <- matrix(
+#   data = c(example_returns$Apple, example_returns$Microsoft, example_returns$Intel, example_returns$Meta),
+#   ncol = 4
+# )
+# 
+# 
+# corr <- abind(symMat(rep(0.25, 6), diag = F),
+#       symMat(rep(0.5, 6), diag = F),
+#       symMat(rep(0.75, 6), diag = F), along = 3)
+# 
+# 
+# returns_tmod <- list(
+#   TPM = stan_starting_tpm(c(.9,.8,.7)),
+#   ID = NA,
+#   MEANS = matrix(0, nrow = 3, ncol = 4),
+#   CORR = corr,
+#   VARS = matrix(c(1,1,1,1,2,2,2,2,3,3,3,3), byrow = T, nrow = 3, ncol = 4),
+#   Stationary = TRUE
+# )
+# 
+# corrdiff <- abind(symMat(rep(0.5, 6), diag = F),
+#               symMat(rep(0.75, 6), diag = F),
+#               symMat(rep(-.25, 6), diag = F), along = 3)
+# 
+# 
+# returns_tmod_diff <- list(
+#   TPM = stan_starting_tpm(c(.8,.8,.8)),
+#   ID = NA,
+#   MEANS = matrix(0, nrow = 3, ncol = 4),
+#   CORR = corrdiff,
+#   VARS = matrix(c(1,1,1,1,4,4,4,4,2,2,2,2), byrow = T, nrow = 3, ncol = 4)
+# )
+# nlm_mod_diff <- mvn.HMM_ml_mod_fit_nlm(returns_tmod_diff, ret_matrix[1:200,], T, T, maxit = 500)
+# big_mod_3state_diff <- mvn.HMM_ml_mod_fit_nlm(nlm_mod_diff, ret_matrix, T, T, maxit = 500)
+# saveRDS(big_mod_3state_diff, "big_mod3state.Rdata")
+# corr2 <- abind(symMat(rep(0.5, 6), diag = F),
+#               symMat(rep(0.75, 6), diag = F),
+#               along = 3)
+# 
+# 
+# returns_tmod2state <- list(
+#   TPM = stan_starting_tpm(c(.9,.9)),
+#   ID = NA,
+#   MEANS = matrix(0, nrow = 2, ncol = 4),
+#   CORR = corr2,
+#   VARS = matrix(c(1,1,1,1,3,3,3,3), byrow = T, nrow = 2, ncol = 4),
+#   Stationary = TRUE
+# )
+# corr4 <- abind(symMat(rep(0.25, 6), diag = F),
+#                symMat(rep(0.5, 6), diag = F),
+#                symMat(rep(0.75, 6), diag = F),
+#                symMat(rep(-0.25, 6), diag = F),
+#                along = 3)
+# 
+# 
+# returns_tmod4state <- list(
+#   TPM = stan_starting_tpm(c(.9,.85, .8, .7)),
+#   ID = NA,
+#   MEANS = matrix(0, nrow = 4, ncol = 4),
+#   CORR = corr2,
+#   VARS = matrix(c(1,1,1,1,2,2,2,2,3, 3, 3, 3 ,4, 4, 4, 4 ), byrow = T, nrow = 4, ncol = 4),
+#   Stationary = TRUE
+# )
+# 
+# #mvn.n2w(returns_tmod, T)
+# #mvn.w2n(mvn.n2w(returns_tmod, T),3,4, T)
+# #returns_tmod
+# #tmatrix <- ret_matrix[1:100,] #Smaller Matrix for small testing
+# 
+# #nlm_mod
+# 
+# 
+# #nlm_mod <- mvn.HMM_ml_mod_fit_nlm(returns_tmod, tmatrix, T, F)
+# #nlm_mod2state <- mvn.HMM_ml_mod_fit_nlm(returns_tmod2state, tmatrix, T, T)
+# #optim_mod
+# #nlm_mod
+# #big_mod_nlm <- mvn.HMM_ml_mod_fit_nlm(nlm_mod, ret_matrix, T, T, maxit = 500)
+# #big_mod_nlm_2state <- mvn.HMM_ml_mod_fit_nlm(nlm_mod2state, ret_matrix, T, T, maxit = 500)
+# #saveRDS(big_mod_nlm, file = 'big_mod.RData')
+#      

@@ -1,0 +1,33 @@
+{
+    "id": "AC767CC6",
+    "path": "C:/Users/tazma/Documents/GitHub/St_Andrews_Final_Project_2024/README.Rmd",
+    "project_path": "README.Rmd",
+    "type": "r_markdown",
+    "hash": "446226010",
+    "contents": "",
+    "dirty": false,
+    "created": 1712319584363.0,
+    "source_on_save": true,
+    "relative_order": 17,
+    "properties": {
+        "tempName": "Untitled1",
+        "chunk_output_type": "inline",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "15,0",
+        "scrollLine": "0",
+        "rmdVisualMode": "false",
+        "rmdVisualWrapConfigured": "true",
+        "docOutlineVisible": "1",
+        "rmdVisualCollapsedChunks": "",
+        "rmdVisualModeLocation": "364:321.6000061035156"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1712320801,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1712320801946,
+    "read_only": false,
+    "read_only_alternatives": []
+}

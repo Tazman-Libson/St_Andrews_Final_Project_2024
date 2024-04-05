@@ -1,0 +1,42 @@
+---
+title: "README"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Pseudo-Residuals for Multivariate HMMs
+
+This is code used for my St. Andrews final year project. It is an exploration into pseudo-residuals for multivariate HMMS. For a complete explanation of the methods please read the report.
+
+The folders are meant to be run in order 1-7.
+
+## Descriptions:
+
+### Data Wrangling
+
+This folder has all the data used for the case study in the report and the data wrangling code for combining all of the stocks into a single data frame and calculating their returns
+
+### Support Functions:
+
+This folder has a variety of support functions. Most notably, it has the functions for converting between natural and working parameters. The transformation for the transition probability matrix is a modified version of the transformations from Zucchini et al (2016). The transformations for the multivariate normal are new.
+
+### Model Fitting
+
+This folder has the likelihood function and the model fitting function which uses `nlm`. The likelihood function is a modified version of the likelihood function from Zucchini et al (2016).
+
+### Conditional and Pseudo-residuals
+
+This folder has the code for calculating the conditional distributions for both vector and element pseudo-residuals. One gets the normal pseudo-residual by taking `qnorm` of the conditional distribution values.
+
+### Generated Data
+
+This folder has the functions for generating data from a model (`Gen_Sample`) and the code for running simulated data trials (`Generated-Data_Testing`).
+
+### Visualizations
+
+This file is still rather unorganized but it has the code where most of the figures of the reports were generated from. See the report markdown file for the specific code for the visualizations in the report. There are a couple of figures that were only written in the report file.
+
+### Extensions
+
+For now this only has an implementation of the Viterbi algorithm. This isn't used in the report.

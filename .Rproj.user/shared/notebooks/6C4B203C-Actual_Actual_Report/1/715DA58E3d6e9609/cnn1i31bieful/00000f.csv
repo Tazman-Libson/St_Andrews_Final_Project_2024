@@ -1,4 +1,0 @@
-"0","elresidsstats <- gooddf %>%"
-"0","  group_by(Stock) %>%"
-"0","  summarise(Mean = mean(Element_Residual), Variance = var(Element_Residual))"
-"0","kable(elresidsstats, digits = 4)"

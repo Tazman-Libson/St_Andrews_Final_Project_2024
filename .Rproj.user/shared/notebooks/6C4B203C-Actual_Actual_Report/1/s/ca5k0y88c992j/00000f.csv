@@ -1,8 +1,0 @@
-"0","pseudoresids_df <- resid_df %>%"
-"0","  select(Date,Apple_resids, Mic_resids, Intel_resids, Meta_resids,Vec_resids, day_num)%>%"
-"0","  rename( Apple=Apple_resids,  Microsoft= Mic_resids , Intel= Intel_resids , Meta = Meta_resids ) %>%"
-"0","  pivot_longer(c(Apple, Microsoft, Intel, Meta), names_to = 'Stock', values_to = 'Element_Residual')"
-"0",""
-"0","gooddf <- left_join(returns_df, pseudoresids_df) %>%"
-"0","  select(Date, Vec_resids, day_num, Stock, Return, Element_Residual)"
-"2","Joining with `by = join_by(Date, Vec_resids, day_num, Stock)`"
