@@ -1,13 +1,13 @@
 {
     "id": "AC767CC6",
-    "path": "C:/Users/tazma/Documents/GitHub/St_Andrews_Final_Project_2024/README.Rmd",
+    "path": "~/GitHub/St_Andrews_Final_Project_2024/README.Rmd",
     "project_path": "README.Rmd",
     "type": "r_markdown",
     "hash": "446226010",
     "contents": "",
     "dirty": false,
     "created": 1712319584363.0,
-    "source_on_save": true,
+    "source_on_save": false,
     "relative_order": 17,
     "properties": {
         "tempName": "Untitled1",
